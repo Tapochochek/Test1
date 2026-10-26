@@ -15,7 +15,7 @@ import (
 	"orenkod/backend/internal/competitions"
 	"orenkod/backend/internal/exportutil"
 	"orenkod/backend/internal/httpserver"
-	"orenkod/backend/internal/integrations/max"
+	"orenkod/backend/internal/integrations/telegram"
 	"orenkod/backend/internal/rules"
 )
 
@@ -24,10 +24,10 @@ type Handler struct {
 	auth   *auth.Service
 	comp   *competitions.Service
 	ath    *athletes.Repository
-	notify *max.Client
+	notify *telegram.Client
 }
 
-func New(db *sql.DB, authService *auth.Service, comp *competitions.Service, ath *athletes.Repository, notify *max.Client) *Handler {
+func New(db *sql.DB, authService *auth.Service, comp *competitions.Service, ath *athletes.Repository, notify *telegram.Client) *Handler {
 	return &Handler{db: db, auth: authService, comp: comp, ath: ath, notify: notify}
 }
 
@@ -173,6 +173,9 @@ func (h *Handler) CreateCompetition(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.audit(r, "создание соревнования", "competitions", c.Title)
+	if h.notify != nil {
+		h.notify.NotifyDraftCreated(c.Title, c.StartsAt)
+	}
 	httpserver.WriteJSON(w, http.StatusCreated, c)
 }
 
@@ -291,6 +294,19 @@ func (h *Handler) DecideApplication(w http.ResponseWriter, r *http.Request) {
 	var compID int64
 	_ = h.db.QueryRowContext(r.Context(), `SELECT competition_id FROM applications WHERE id=$1`, id).Scan(&compID)
 	h.refreshParticipants(r, compID)
+	var telegramUserID sql.NullInt64
+	var competitionTitle string
+	_ = h.db.QueryRowContext(r.Context(), `SELECT u.telegram_user_id,c.title FROM applications ap JOIN competitions c ON c.id=ap.competition_id JOIN athletes ath ON ath.id=ap.athlete_id LEFT JOIN users u ON u.id=ath.user_id WHERE ap.id=$1`, id).Scan(&telegramUserID, &competitionTitle)
+	if h.notify != nil && telegramUserID.Valid {
+		message := "Заявка на соревнование «" + competitionTitle + "» одобрена."
+		if input.Status == "rejected" {
+			message = "Заявка на соревнование «" + competitionTitle + "» отклонена."
+			if input.Reason != "" {
+				message += " Причина: " + input.Reason
+			}
+		}
+		h.notify.NotifyUser(telegramUserID.Int64, message)
+	}
 	h.audit(r, "модерация заявки", "applications", input.Status)
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -519,6 +535,7 @@ func (h *Handler) SaveResults(w http.ResponseWriter, r *http.Request) {
 	}
 	h.recalculatePoints(r)
 	h.notifyRole(r, rules.RoleAthlete, "success", "Протокол опубликован", "Результаты соревнования доступны в истории выступлений.")
+	h.notifyLinkedAthletesOfResults(r, id)
 	h.audit(r, "ввод результатов", "results", strconv.FormatInt(id, 10))
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -696,6 +713,16 @@ func (h *Handler) RankDecide(w http.ResponseWriter, r *http.Request) {
 		_, _ = h.db.ExecContext(r.Context(), `UPDATE athletes SET rank_title=r.requested_rank, rank_assigned_at=CURRENT_DATE, rank_expires_at=CURRENT_DATE + INTERVAL '2 years', rank_order=$1
 			FROM rank_applications r WHERE athletes.id=r.athlete_id AND r.id=$2`, input.Order, id)
 	}
+	var telegramUserID sql.NullInt64
+	var requestedRank string
+	_ = h.db.QueryRowContext(r.Context(), `SELECT u.telegram_user_id,ra.requested_rank FROM rank_applications ra JOIN athletes ath ON ath.id=ra.athlete_id LEFT JOIN users u ON u.id=ath.user_id WHERE ra.id=$1`, id).Scan(&telegramUserID, &requestedRank)
+	if h.notify != nil && telegramUserID.Valid {
+		message := "Заявка на разряд «" + requestedRank + "» рассмотрена: " + input.Status + "."
+		if input.Note != "" {
+			message += " Комментарий Федерации: " + input.Note
+		}
+		h.notify.NotifyUser(telegramUserID.Int64, message)
+	}
 	h.audit(r, "решение по разряду", "rank_applications", input.Status)
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -715,6 +742,8 @@ func (h *Handler) CategoryApply(w http.ResponseWriter, r *http.Request) {
 		httpserver.WriteError(w, http.StatusInternalServerError, "Не удалось подать заявку")
 		return
 	}
+	h.notifyRole(r, rules.RoleFederation, "info", "Заявка на судейскую категорию", "Поступила заявка на присвоение или подтверждение судейской категории.")
+	h.audit(r, "подача заявки на судейскую категорию", "category_applications", input.Requested)
 	httpserver.WriteJSON(w, http.StatusCreated, map[string]any{"ok": true})
 }
 
@@ -763,6 +792,17 @@ func (h *Handler) CategoryDecide(w http.ResponseWriter, r *http.Request) {
 		_, _ = h.db.ExecContext(r.Context(), `UPDATE judges SET category=c.requested_category, category_expires_at=CURRENT_DATE + INTERVAL '4 years'
 			FROM category_applications c WHERE judges.id=c.judge_id AND c.id=$1`, id)
 	}
+	var telegramUserID sql.NullInt64
+	var requestedCategory string
+	_ = h.db.QueryRowContext(r.Context(), `SELECT u.telegram_user_id,c.requested_category FROM category_applications c JOIN judges j ON j.id=c.judge_id LEFT JOIN users u ON u.id=j.user_id WHERE c.id=$1`, id).Scan(&telegramUserID, &requestedCategory)
+	if h.notify != nil && telegramUserID.Valid {
+		message := "Заявка на судейскую категорию «" + requestedCategory + "» рассмотрена: " + input.Status + "."
+		if input.Note != "" {
+			message += " Комментарий Федерации: " + input.Note
+		}
+		h.notify.NotifyUser(telegramUserID.Int64, message)
+	}
+	h.audit(r, "решение по судейской категории", "category_applications", input.Status)
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1208,10 +1248,39 @@ func (h *Handler) buildRating(r *http.Request, discipline, age string) ([]rating
 	return out, nil
 }
 
+func (h *Handler) notifyLinkedAthletesOfResults(r *http.Request, competitionID int64) {
+	if h.notify == nil {
+		return
+	}
+	rows, err := h.db.QueryContext(r.Context(), `SELECT DISTINCT c.title, u.telegram_user_id
+		FROM applications ap
+		JOIN competitions c ON c.id=ap.competition_id
+		JOIN athletes a ON a.id=ap.athlete_id
+		JOIN users u ON u.id=a.user_id
+		WHERE ap.competition_id=$1 AND ap.status='approved' AND u.telegram_user_id IS NOT NULL`, competitionID)
+	if err != nil {
+		log.Printf("Telegram result notification lookup: %v", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var title string
+		var telegramUserID int64
+		if err := rows.Scan(&title, &telegramUserID); err != nil {
+			log.Printf("Telegram result notification scan: %v", err)
+			continue
+		}
+		h.notify.NotifyUser(telegramUserID, "Опубликованы результаты соревнования «"+title+"». Откройте платформу ФСП 56, чтобы посмотреть место и баллы.")
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("Telegram result notification rows: %v", err)
+	}
+}
+
 func (h *Handler) notifyRole(r *http.Request, role, kind, title, message string) {
 	_, _ = h.db.ExecContext(r.Context(), `INSERT INTO inbox(role_scope,kind,title,message) VALUES($1,$2,$3,$4)`, role, kind, title, message)
 	if h.notify != nil {
-		h.notify.NotifyDraftCreated(title, message)
+		h.notify.NotifyChannel(title, message)
 	}
 }
 

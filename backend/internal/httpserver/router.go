@@ -16,8 +16,7 @@ type Routes struct {
 	Rating            http.HandlerFunc
 	Team              http.HandlerFunc
 	Notifications     http.HandlerFunc
-	MaxStatus         http.HandlerFunc
-	MaxWebhook        http.HandlerFunc
+	TelegramStatus    http.HandlerFunc
 	Auth              *auth.Service
 	Platform          PlatformRoutes
 }
@@ -33,6 +32,7 @@ type PlatformRoutes struct {
 	CatApply, CatList, CatDecide                                                                                              http.HandlerFunc
 	TeamSave, TeamOrder                                                                                                       http.HandlerFunc
 	Enrollment, AthleteReport, RegistryXLSX, AddType, Development, Audit, Certificate, Inbox, Rating, TeamGet, ApproveAthlete http.HandlerFunc
+	TelegramLinkCode, TelegramLinkStatus, TelegramUnlink                                                                      http.HandlerFunc
 }
 
 func NewRouter(routes Routes) http.Handler {
@@ -43,8 +43,7 @@ func NewRouter(routes Routes) http.Handler {
 	register(mux, "GET /api/verify/{code}", routes.Platform.Verify)
 	register(mux, "POST /api/auth/login", routes.Platform.Login)
 	register(mux, "POST /api/auth/register", routes.Platform.Register)
-	register(mux, "POST /api/integrations/max/webhook", routes.MaxWebhook)
-	register(mux, "GET /api/integrations/max/status", routes.MaxStatus)
+	register(mux, "GET /api/integrations/telegram/status", routes.TelegramStatus)
 
 	if routes.Auth != nil {
 		anyUser := routes.Auth.Middleware()
@@ -59,6 +58,9 @@ func NewRouter(routes Routes) http.Handler {
 
 		register(mux, "POST /api/auth/logout", anyUser(routes.Platform.Logout))
 		register(mux, "GET /api/auth/me", anyUser(routes.Platform.Me))
+		register(mux, "GET /api/integrations/telegram/link-status", anyUser(routes.Platform.TelegramLinkStatus))
+		register(mux, "POST /api/integrations/telegram/link-code", anyUser(routes.Platform.TelegramLinkCode))
+		register(mux, "DELETE /api/integrations/telegram/link", anyUser(routes.Platform.TelegramUnlink))
 		register(mux, "POST /api/auth/switch-role", anyUser(routes.Platform.Switch))
 		register(mux, "GET /api/dashboard", anyUser(routes.Dashboard))
 		register(mux, "GET /api/competitions", anyUser(routes.Competitions))

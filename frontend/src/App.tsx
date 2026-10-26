@@ -3,7 +3,7 @@ import {
   Activity, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, CalendarDays,
   CheckCircle2, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Code2,
   FileBadge, FileText, Filter, Flag, LayoutDashboard, Menu, Plus, Search,
-  Settings2, ShieldCheck, Users, UserRound, Trophy, X, LogOut, Sun, Moon, Monitor,
+  Settings2, ShieldCheck, Users, UserRound, Trophy, X, LogOut, Sun, Moon, Monitor, Send,
 } from 'lucide-react'
 import fspLogo from './assets/fsp-logo.svg'
 import fspLogoDark from './assets/fsp-logo-dark.svg'
@@ -22,7 +22,8 @@ type RatingEntry = {
 }
 type Notice = { id: number; kind: string; title: string; message: string; when: string }
 type ApplicationItem = { id: number; competition_id: number; competition: string; athlete_id: number; athlete: string; discipline: string; age_group: string; status: string; reject_reason: string; created_at: string }
-type MaxStatus = { configured: boolean; default_chat_configured: boolean; webhook_secret_configured: boolean; webhook_path: string }
+type TelegramStatus = { configured: boolean; default_chat_configured: boolean; polling_enabled: boolean; mode: string }
+type TelegramLinkStatus = { linked: boolean }
 type DashboardData = { stats: { athletes: number; competitions: number; applications: number; judges: number }; competitions_total: number; competitions: Competition[]; top_athletes: RatingEntry[] }
 
 type Role = 'Федерация' | 'Тренер' | 'Спортсмен' | 'Судья'
@@ -119,7 +120,11 @@ export default function App() {
   const [team, setTeam] = useState<RatingEntry[]>(fallbackRating.slice(0, 5))
   const [notices, setNotices] = useState<Notice[]>(fallbackNotices)
   const [applications, setApplications] = useState<ApplicationItem[]>([])
-  const [maxStatus, setMaxStatus] = useState<MaxStatus>({ configured: false, default_chat_configured: false, webhook_secret_configured: false, webhook_path: '/api/integrations/max/webhook' })
+  const [telegramStatus, setTelegramStatus] = useState<TelegramStatus>({ configured: false, default_chat_configured: false, polling_enabled: false, mode: 'long_polling' })
+  const [telegramLinkStatus, setTelegramLinkStatus] = useState<TelegramLinkStatus>({ linked: false })
+  const [telegramLinkCode, setTelegramLinkCode] = useState('')
+  const [telegramLinkExpiresAt, setTelegramLinkExpiresAt] = useState<number | null>(null)
+  const [telegramLinkBusy, setTelegramLinkBusy] = useState(false)
   const [notice, setNotice] = useState('')
   const [search, setSearch] = useState('')
   const [discipline, setDiscipline] = useState('Все дисциплины')
@@ -138,13 +143,13 @@ export default function App() {
     if (!user) return
     try {
       setLoading(true)
-      const [d, c, a, r, t, n, nMax] = await Promise.all([
+      const [d, c, a, r, t, n, nTelegram, nTelegramLink] = await Promise.all([
         api<DashboardData>('/api/dashboard'), api<{ items: Competition[] }>('/api/competitions'),
         (user.active_role === 'federation' || user.active_role === 'coach' ? api<{ items: Athlete[] }>('/api/athletes') : Promise.resolve({ items: [] as Athlete[] })), api<{ items: RatingEntry[] }>('/api/rating'),
         api<{ items: RatingEntry[] }>('/api/team'), api<{ items: Notice[] }>('/api/notifications'),
-        api<MaxStatus>('/api/integrations/max/status'),
+        api<TelegramStatus>('/api/integrations/telegram/status'), api<TelegramLinkStatus>('/api/integrations/telegram/link-status'),
       ])
-      setDashboard(d); setCompetitions(c.items); setAthletes(a.items); setRating(r.items); setTeam(t.items); setNotices(n.items); setMaxStatus(nMax); setDataSource('api')
+      setDashboard(d); setCompetitions(c.items); setAthletes(a.items); setRating(r.items); setTeam(t.items); setNotices(n.items); setTelegramStatus(nTelegram); setTelegramLinkStatus(nTelegramLink); if (nTelegramLink.linked) { setTelegramLinkCode(''); setTelegramLinkExpiresAt(null) }; setDataSource('api')
       if (user.active_role === 'federation') {
         try { const apps = await api<{ items: ApplicationItem[] }>('/api/applications'); setApplications(apps.items) } catch { setApplications([]) }
       } else { setApplications([]) }
@@ -154,6 +159,43 @@ export default function App() {
   }, [user])
 
   useEffect(() => { if (user) void loadData() }, [user, loadData])
+  useEffect(() => {
+    if (!user || !telegramStatus.configured || telegramStatus.polling_enabled) return
+    let cancelled = false
+    const refreshTelegramStatus = async () => {
+      try {
+        const status = await api<TelegramStatus>('/api/integrations/telegram/status')
+        if (!cancelled) setTelegramStatus(status)
+      } catch { /* status polling is best-effort while the bot starts */ }
+    }
+    const timer = window.setInterval(() => void refreshTelegramStatus(), 5000)
+    void refreshTelegramStatus()
+    return () => { cancelled = true; window.clearInterval(timer) }
+  }, [user, telegramStatus.configured, telegramStatus.polling_enabled])
+  useEffect(() => {
+    if (!user || page !== 'notifications' || !telegramLinkCode || !telegramLinkExpiresAt || telegramLinkStatus.linked) return
+    let checking = false
+    const checkLinkStatus = async () => {
+      if (checking) return
+      if (Date.now() >= telegramLinkExpiresAt) {
+        setTelegramLinkCode(''); setTelegramLinkExpiresAt(null)
+        setNotice('Код подключения Telegram истёк. Создайте новый код.')
+        return
+      }
+      checking = true
+      try {
+        const status = await api<TelegramLinkStatus>('/api/integrations/telegram/link-status')
+        if (status.linked) {
+          setTelegramLinkStatus(status); setTelegramLinkCode(''); setTelegramLinkExpiresAt(null)
+          setNotice('Аккаунт Telegram успешно подключён. Персональные уведомления активны.')
+        }
+      } catch { /* временная недоступность статуса не должна сбрасывать введённый код */ }
+      finally { checking = false }
+    }
+    const timer = window.setInterval(() => void checkLinkStatus(), 2500)
+    void checkLinkStatus()
+    return () => window.clearInterval(timer)
+  }, [user, page, telegramLinkCode, telegramLinkExpiresAt, telegramLinkStatus.linked])
   useEffect(() => { if (!notice) return; const timer = window.setTimeout(() => setNotice(''), 4800); return () => window.clearTimeout(timer) }, [notice])
 
   const visibleCompetitions = useMemo(() => competitions.filter(c => `${c.title} ${c.discipline} ${c.location} ${c.status}`.toLowerCase().includes(search.toLowerCase())), [competitions, search])
@@ -166,6 +208,18 @@ export default function App() {
     catch (error) { setNotice(error instanceof Error ? error.message : 'Не удалось сменить роль') }
   }
   async function logout() { try { await api('/api/auth/logout', { method: 'POST' }) } catch { /* локальная сессия всё равно очищается */ } localStorage.removeItem('fsp_token'); setUser(null); setPage('overview') }
+  async function generateTelegramLinkCode() {
+    setTelegramLinkBusy(true)
+    try { const result = await api<{ code: string; expires_in_seconds: number }>('/api/integrations/telegram/link-code', { method: 'POST', body: JSON.stringify({}) }); setTelegramLinkCode(result.code); setTelegramLinkExpiresAt(Date.now() + result.expires_in_seconds * 1000); setNotice('Код Telegram создан и действует 10 минут.') }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Не удалось создать код Telegram') }
+    finally { setTelegramLinkBusy(false) }
+  }
+  async function unlinkTelegram() {
+    setTelegramLinkBusy(true)
+    try { await api('/api/integrations/telegram/link', { method: 'DELETE' }); setTelegramLinkStatus({ linked: false }); setTelegramLinkCode(''); setTelegramLinkExpiresAt(null); setNotice('Персональные уведомления Telegram отключены.') }
+    catch (error) { setNotice(error instanceof Error ? error.message : 'Не удалось отключить Telegram') }
+    finally { setTelegramLinkBusy(false) }
+  }
   if (authChecking) return <div className="auth-loading"><img className="fsp-logo fsp-logo-loading" src={effectiveTheme === 'light' ? fspLogoDark : fspLogo} alt="ФСП 56 — Оренбургская область" /><p>Проверяем сессию…</p></div>
   if (!user) return <AuthScreen preference={themePreference} effectiveTheme={effectiveTheme} onToggleTheme={toggleTheme} onAuthenticated={(token, signedInUser) => { localStorage.setItem('fsp_token', token); setUser(signedInUser); setRole(roleLabels[signedInUser.active_role] || 'Спортсмен') }} />
 
@@ -204,18 +258,18 @@ export default function App() {
       </header>
 
       <div className="page-content">
-        <section className="welcome-row">
+        <section className={`welcome-row ${page === 'overview' ? 'welcome-row-home' : ''}`}>
           <div><div className="eyebrow"><span className="eyebrow-line" /> ЕДИНАЯ ЦИФРОВАЯ СРЕДА ФСП</div><h1>{page === 'overview' ? (user.active_role === 'federation' ? 'Управление спортивным программированием' : user.active_role === 'coach' ? 'Кабинет тренера' : user.active_role === 'athlete' ? 'Кабинет спортсмена' : 'Рабочее место судьи') : titles[page]}</h1><p>{page === 'overview' ? `${roleDescriptions[role]} · Оренбургская область` : `${roleDescriptions[role]} · Оренбургская область`}</p></div>
           <div className="welcome-actions"><div className="last-updated"><span className={`refresh-dot ${loading ? 'loading' : ''}`} />{loading ? 'Обновление…' : dataSource === 'api' ? 'Данные загружены из API' : 'Демонстрационные данные'}</div>{user.active_role === 'federation' && (page === 'overview' || page === 'competitions') && <button className="button button-primary" onClick={() => setModalOpen(true)}><Plus size={17} /> Создать соревнование</button>}</div>
         </section>
 
-        {page === 'overview' && <Dashboard dashboard={dashboard} competitions={competitions} rating={rating} notices={notices} maxStatus={maxStatus} onNavigate={openPage} role={user.active_role} />}
+        {page === 'overview' && <Dashboard dashboard={dashboard} competitions={competitions} rating={rating} notices={notices} telegramStatus={telegramStatus} onNavigate={openPage} role={user.active_role} />}
         {page === 'competitions' && <><CompetitionsView items={visibleCompetitions} search={search} setSearch={setSearch} canCreate={user.active_role === 'federation'} role={user.active_role} onCreate={() => setModalOpen(true)} onApply={async id => { try { await api(`/api/competitions/${id}/apply`, { method: 'POST', body: JSON.stringify({}) }); setNotice('Заявка отправлена на рассмотрение Федерации.'); await loadData() } catch (e) { setNotice(e instanceof Error ? e.message : 'Не удалось подать заявку') } }} onPublish={async id => { try { await api(`/api/competitions/${id}/publish`, { method: 'POST', body: JSON.stringify({ open: true }) }); setNotice('Соревнование опубликовано, приём заявок открыт.'); await loadData() } catch (e) { setNotice(e instanceof Error ? e.message : 'Не удалось опубликовать соревнование') } }} />{user.active_role === 'federation' && <ApplicationsPanel items={applications} onDecide={async (id, status) => { try { await api(`/api/applications/${id}/decide`, { method: 'POST', body: JSON.stringify({ status, reason: status === 'rejected' ? 'Не соответствует требованиям соревнования' : '' }) }); setNotice(status === 'approved' ? 'Заявка одобрена.' : 'Заявка отклонена.'); await loadData() } catch (e) { setNotice(e instanceof Error ? e.message : 'Не удалось обработать заявку') } }} />}</>}
         {page === 'participants' && <AthletesView items={visibleAthletes} search={search} setSearch={setSearch} canApprove={user.active_role === 'federation'} onApprove={async id => { try { await api(`/api/athletes/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }); setNotice('Профиль спортсмена подтверждён.'); await loadData() } catch (e) { setNotice(e instanceof Error ? e.message : 'Не удалось подтвердить профиль') } }} />}
         {page === 'rating' && <RatingView items={visibleRating} discipline={discipline} setDiscipline={setDiscipline} ageGroup={ageGroup} setAgeGroup={setAgeGroup} search={search} setSearch={setSearch} />}
         {page === 'team' && <TeamView items={team} rating={rating} canEdit={user.active_role === 'federation'} onSave={async ids => { try { const selected = ids.map(id => { const athlete = rating.find(a => a.athlete_id === id); return { athlete_id: id, discipline: athlete?.discipline || '', age_group: athlete?.age_group || '' } }); await api('/api/team', { method: 'POST', body: JSON.stringify({ items: selected }) }); setNotice('Состав сборной сохранён.'); await loadData() } catch (error) { setNotice(error instanceof Error ? error.message : 'Не удалось сохранить состав сборной') } }} />}
         {page === 'documents' && <DocumentsView onMessage={setNotice} competitions={competitions} athletes={athletes} user={user} role={user.active_role} />}
-        {page === 'notifications' && <NotificationsView items={notices} />}
+        {page === 'notifications' && <NotificationsView items={notices} telegramStatus={telegramStatus} telegramLinkStatus={telegramLinkStatus} telegramLinkCode={telegramLinkCode} telegramLinkBusy={telegramLinkBusy} onGenerateCode={() => void generateTelegramLinkCode()} onUnlink={() => void unlinkTelegram()} />}
 
         <footer className="footer"><div><span className="footer-mark"><Code2 size={14} /></span> ФСП · ОРЕНБУРГСКАЯ ОБЛАСТЬ</div><span>Прототип для ОренКод 2026 <b>·</b> v0.1</span></footer>
       </div>
@@ -251,15 +305,37 @@ function AuthScreen({ onAuthenticated, preference, effectiveTheme, onToggleTheme
     {error && <div className="auth-error" role="alert">{error}</div>}<button className="auth-submit" disabled={busy}>{busy ? 'Подождите…' : mode === 'login' ? 'Войти в платформу' : 'Создать аккаунт'}<ArrowRight size={16} /></button></form>{mode === 'login' && <div className="auth-demo"><b>Демо-доступы</b><span>Федерация: federation@fsp56.ru</span><span>Спортсмен: morozov@fsp56.ru</span><small>Пароль для всех демонстрационных аккаунтов: <b>demo</b></small></div>}<div className="auth-foot"><ShieldCheck size={13} /> Защищённая сессия · разграничение прав по ролям</div></section><div className="auth-side-note"><span>ФСП / 56</span><h2>Спортивное<br/>программирование<br/>региона — в одной системе.</h2><p>Соревнования · заявки · результаты · рейтинг · спортивная история</p></div></div>
 }
 
-function Dashboard({ dashboard, competitions, rating, notices, maxStatus, onNavigate, role }: { dashboard: DashboardData; competitions: Competition[]; rating: RatingEntry[]; notices: Notice[]; maxStatus: MaxStatus; onNavigate: (page: PageKey) => void; role: RoleCode }) {
+function Dashboard({ dashboard, competitions, rating, notices, telegramStatus, onNavigate, role }: { dashboard: DashboardData; competitions: Competition[]; rating: RatingEntry[]; notices: Notice[]; telegramStatus: TelegramStatus; onNavigate: (page: PageKey) => void; role: RoleCode }) {
+  useEffect(() => {
+    const root = document.querySelector('.dashboard-experience')
+    if (!root) return
+    const targets = Array.from(root.querySelectorAll<HTMLElement>('[data-reveal]'))
+    if (!targets.length) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) {
+      targets.forEach(target => target.classList.add('is-revealed'))
+      return
+    }
+    root.classList.add('reveal-enabled')
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('is-revealed')
+          observer.unobserve(entry.target)
+        }
+      })
+    }, { threshold: 0.12, rootMargin: '0px 0px -7% 0px' })
+    targets.forEach(target => observer.observe(target))
+    return () => observer.disconnect()
+  }, [])
+
   const stats = [
     { label: 'Спортсмены в реестре', value: dashboard.stats.athletes.toLocaleString('ru-RU'), change: 'Реестр', icon: Users, cls: 'stat-indigo', foot: 'учётные записи спортсменов', up: true },
     { label: 'Активные соревнования', value: String(dashboard.stats.competitions).padStart(2, '0'), change: 'Календарь', icon: CalendarDays, cls: 'stat-mint', foot: 'соревнования платформы', up: true },
     { label: 'Заявки участников', value: dashboard.stats.applications.toLocaleString('ru-RU'), change: 'Заявки', icon: ClipboardList, cls: 'stat-orange', foot: 'всего в системе', up: false },
     { label: 'Судьи в системе', value: String(dashboard.stats.judges).padStart(2, '0'), change: 'Реестр', icon: ShieldCheck, cls: 'stat-blue', foot: 'учётные записи судей', up: false },
   ]
-  return <>
-    <section className="hero-banner editorial-hero">
+  return <div className="dashboard-experience">
+    <section className="hero-banner editorial-hero" data-reveal="hero">
       <div className="hero-grid" aria-hidden="true" />
       <div className="hero-copy"><div className="hero-label"><span className="hero-label-mark" /> {role === 'federation' ? 'ФСП · ОРЕНБУРГСКАЯ ОБЛАСТЬ' : role === 'coach' ? 'ЛИЧНЫЙ КАБИНЕТ ТРЕНЕРА' : role === 'athlete' ? 'ЛИЧНЫЙ КАБИНЕТ СПОРТСМЕНА' : 'СУДЕЙСКАЯ КОЛЛЕГИЯ'}</div><h2>Спорт начинается<br /><span>с возможностей.</span></h2><p>Соревнования, люди и результаты регионального спортивного программирования — в одном понятном рабочем пространстве.</p><button onClick={() => onNavigate('competitions')} className="hero-cta">Открыть календарь <ArrowRight size={16} /></button></div>
       <div className="hero-visual" aria-hidden="true"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="orbit orbit-three" /><div className="hero-core"><Code2 size={37} /></div><div className="hero-node node-one" /><div className="hero-node node-two" /><div className="hero-node node-three" /><div className="hero-scanline" /></div>
@@ -267,23 +343,23 @@ function Dashboard({ dashboard, competitions, rating, notices, maxStatus, onNavi
       <div className="hero-bottom-note"><span /> РЕГИОНАЛЬНАЯ ПЛАТФОРМА · СПОРТИВНОЕ ПРОГРАММИРОВАНИЕ</div>
     </section>
 
-    <div className="section-heading"><div><h2>В цифрах</h2><p>Текущие данные платформы</p></div><button className="text-button" onClick={() => onNavigate('participants')}>Открыть реестр <ArrowRight size={15} /></button></div>
+    <div className="section-heading" data-reveal="heading"><div><h2>В цифрах</h2><p>Текущие данные платформы</p></div><button className="text-button" onClick={() => onNavigate('participants')}>Открыть реестр <ArrowRight size={15} /></button></div>
     <section className="stats-grid">
-      {stats.map((s, i) => <div className="stat-card" key={s.label}><div className={`stat-icon ${s.cls}`}><s.icon size={19} /></div><div className="stat-meta"><span>{s.label}</span><b>{s.value}</b><div className={`stat-foot ${s.up ? 'positive' : 'attention'}`}>{s.up ? <ArrowUpRight size={14} /> : <Activity size={13} />}<strong>{s.change}</strong><span>{s.foot}</span></div></div><div className={`stat-watermark wm-${i}`}><s.icon size={52} /></div></div>)}
+      {stats.map((s, i) => <div className="stat-card" data-reveal="stat" key={s.label}><div className={`stat-icon ${s.cls}`}><s.icon size={19} /></div><div className="stat-meta"><span>{s.label}</span><b>{s.value}</b><div className={`stat-foot ${s.up ? 'positive' : 'attention'}`}>{s.up ? <ArrowUpRight size={14} /> : <Activity size={13} />}<strong>{s.change}</strong><span>{s.foot}</span></div></div><div className={`stat-watermark wm-${i}`}><s.icon size={52} /></div></div>)}
     </section>
 
     <section className="content-grid main-dashboard-grid">
-      <div className="panel competition-panel"><div className="panel-heading"><div><div className="panel-kicker">КАЛЕНДАРЬ</div><h3>Ближайшие соревнования</h3></div><button className="panel-action" onClick={() => onNavigate('competitions')}>Все события <ArrowRight size={14} /></button></div>
+      <div className="panel competition-panel" data-reveal="calendar"><div className="panel-heading"><div><div className="panel-kicker">КАЛЕНДАРЬ</div><h3>Ближайшие соревнования</h3></div><button className="panel-action" onClick={() => onNavigate('competitions')}>Все события <ArrowRight size={14} /></button></div>
         <div className="event-list">{competitions.slice(0, 3).map(c => <div className="event-row" key={c.id}><div className="event-date"><b>{new Date(c.starts_at).toLocaleDateString('ru-RU', { day: '2-digit' })}</b><span>{new Date(c.starts_at).toLocaleDateString('ru-RU', { month: 'short' }).replace('.', '')}</span></div><div className="event-copy"><b>{c.title}</b><span><Code2 size={12} /> {c.discipline} <i /> {c.location}</span></div><div className={`status-pill ${c.status === 'Регистрация' ? 'status-open' : c.status === 'Завершено' ? 'status-done' : 'status-planned'}`}>{c.status}</div><button className="row-arrow" aria-label={`Открыть ${c.title}`} onClick={() => onNavigate('competitions')}><ChevronRight size={17} /></button></div>)}</div>
         <button className="panel-bottom-link" onClick={() => onNavigate('competitions')}><CalendarDays size={15} /> Перейти в календарь <ArrowRight size={14} /></button>
       </div>
-      <div className="panel rating-panel"><div className="panel-heading"><div><div className="panel-kicker">ТОП РЕЙТИНГА</div><h3>Топ рейтинга региона</h3></div><button className="round-action" onClick={() => onNavigate('rating')} aria-label="Открыть рейтинг"><ArrowUpRight size={17} /></button></div><div className="rating-list">{rating.slice(0, 5).map((a, i) => <div className="rating-row" key={a.athlete}><div className={`rank-num ${i === 0 ? 'rank-gold' : i === 1 ? 'rank-silver' : i === 2 ? 'rank-bronze' : ''}`}>{String(i + 1).padStart(2, '0')}</div><div className={`athlete-avatar avatar-${i % 4}`}>{a.athlete.split(' ').map(x => x[0]).slice(0, 2).join('')}</div><div className="rating-athlete"><b>{a.athlete}</b><span>{a.organization}</span></div><div className="rating-points"><b>{a.points}</b><span>очков</span></div></div>)}</div><button className="panel-bottom-link" onClick={() => onNavigate('rating')}><Trophy size={15} /> Полный рейтинг <ArrowRight size={14} /></button></div>
+      <div className="panel rating-panel" data-reveal="rating"><div className="panel-heading"><div><div className="panel-kicker">ТОП РЕЙТИНГА</div><h3>Топ рейтинга региона</h3></div><button className="round-action" onClick={() => onNavigate('rating')} aria-label="Открыть рейтинг"><ArrowUpRight size={17} /></button></div><div className="rating-list">{rating.slice(0, 5).map((a, i) => <div className="rating-row" key={a.athlete}><div className={`rank-num ${i === 0 ? 'rank-gold' : i === 1 ? 'rank-silver' : i === 2 ? 'rank-bronze' : ''}`}>{String(i + 1).padStart(2, '0')}</div><div className={`athlete-avatar avatar-${i % 4}`}>{a.athlete.split(' ').map(x => x[0]).slice(0, 2).join('')}</div><div className="rating-athlete"><b>{a.athlete}</b><span>{a.organization}</span></div><div className="rating-points"><b>{a.points}</b><span>очков</span></div></div>)}</div><button className="panel-bottom-link" onClick={() => onNavigate('rating')}><Trophy size={15} /> Полный рейтинг <ArrowRight size={14} /></button></div>
     </section>
 
-    <section className="content-grid lower-grid"><div className="panel workflow-panel"><div className="panel-heading"><div><div className="panel-kicker">ТРЕБУЮТ ВНИМАНИЯ</div><h3>Рабочие задачи</h3></div><span className="count-badge">03</span></div><div className="workflow-item"><div className="workflow-icon workflow-yellow"><ClipboardList size={17} /></div><div><b>Модерация заявок</b><span>12 заявок ждут решения Федерации</span></div><button onClick={() => onNavigate('competitions')} aria-label="Проверить заявки"><ArrowRight size={15} /></button></div><div className="workflow-item"><div className="workflow-icon workflow-red"><ShieldCheck size={17} /></div><div><b>Срок действия категорий</b><span>3 судейские категории требуют проверки</span></div><button onClick={() => onNavigate('participants')} aria-label="Проверить категории"><ArrowRight size={15} /></button></div><div className="workflow-item"><div className="workflow-icon workflow-green"><FileBadge size={17} /></div><div><b>Протокол к публикации</b><span>Один документ готов к согласованию</span></div><button onClick={() => onNavigate('documents')} aria-label="Открыть документы"><ArrowRight size={15} /></button></div></div>
-      <div className="panel notices-panel"><div className="panel-heading"><div><div className="panel-kicker">СИСТЕМА</div><h3>Последние уведомления</h3></div><button className="panel-action" onClick={() => onNavigate('notifications')}>Все <ArrowRight size={14} /></button></div><div className="notice-list">{notices.slice(0, 3).map(n => <div className="notice-row" key={n.id}><div className={`notice-mark notice-${n.kind}`}>{n.kind === 'warning' ? <Activity size={15} /> : n.kind === 'success' ? <CheckCircle2 size={15} /> : <Bell size={15} />}</div><div><b>{n.title}</b><p>{n.message}</p><small>{n.when}</small></div></div>)}</div></div></section>
-    <section className="max-integration-card"><div className="max-brand-block"><span className="max-logo">M</span><div><span className="panel-kicker">ВНЕШНИЕ ИНТЕГРАЦИИ</span><h3>Оповещения в MAX</h3><p>Напоминания о сроках, соревнованиях и публикации результатов — прямо в мессенджере.</p></div></div><div className="max-status-block"><span className={`max-connection ${maxStatus.configured && maxStatus.webhook_secret_configured ? 'max-connected' : ''}`}><span />{maxStatus.configured && maxStatus.webhook_secret_configured ? 'Переменные заданы' : maxStatus.configured ? 'Нужен секрет webhook' : 'Ожидает подключения'}</span><div className="max-meta"><span><CheckCircle2 size={13} /> Go webhook готов</span><span><ShieldCheck size={13} /> Проверка секрета</span></div><button className="button button-light" onClick={() => onNavigate('documents')}>Как подключить <ArrowRight size={14} /></button></div></section>
-  </>
+    <section className="content-grid lower-grid"><div className="panel workflow-panel" data-reveal="workflow"><div className="panel-heading"><div><div className="panel-kicker">ТРЕБУЮТ ВНИМАНИЯ</div><h3>Рабочие задачи</h3></div><span className="count-badge">03</span></div><div className="workflow-item"><div className="workflow-icon workflow-yellow"><ClipboardList size={17} /></div><div><b>Модерация заявок</b><span>12 заявок ждут решения Федерации</span></div><button onClick={() => onNavigate('competitions')} aria-label="Проверить заявки"><ArrowRight size={15} /></button></div><div className="workflow-item"><div className="workflow-icon workflow-red"><ShieldCheck size={17} /></div><div><b>Срок действия категорий</b><span>3 судейские категории требуют проверки</span></div><button onClick={() => onNavigate('participants')} aria-label="Проверить категории"><ArrowRight size={15} /></button></div><div className="workflow-item"><div className="workflow-icon workflow-green"><FileBadge size={17} /></div><div><b>Протокол к публикации</b><span>Один документ готов к согласованию</span></div><button onClick={() => onNavigate('documents')} aria-label="Открыть документы"><ArrowRight size={15} /></button></div></div>
+      <div className="panel notices-panel" data-reveal="notices"><div className="panel-heading"><div><div className="panel-kicker">СИСТЕМА</div><h3>Последние уведомления</h3></div><button className="panel-action" onClick={() => onNavigate('notifications')}>Все <ArrowRight size={14} /></button></div><div className="notice-list">{notices.slice(0, 3).map(n => <div className="notice-row" key={n.id}><div className={`notice-mark notice-${n.kind}`}>{n.kind === 'warning' ? <Activity size={15} /> : n.kind === 'success' ? <CheckCircle2 size={15} /> : <Bell size={15} />}</div><div><b>{n.title}</b><p>{n.message}</p><small>{n.when}</small></div></div>)}</div></div></section>
+    <section className="telegram-integration-card" data-reveal="integration"><div className="telegram-brand-block"><span className="telegram-logo"><Send size={17} /></span><div><span className="panel-kicker">ВНЕШНИЕ ИНТЕГРАЦИИ</span><h3>Оповещения в Telegram</h3><p>Решения по заявкам, обновления соревнований и публикация результатов — прямо в мессенджере.</p></div></div><div className="telegram-status-block"><span className={`telegram-connection ${telegramStatus.configured && telegramStatus.polling_enabled ? 'telegram-connected' : ''}`}><span />{telegramStatus.configured && telegramStatus.polling_enabled ? 'Бот настроен' : telegramStatus.configured ? 'Нет связи — проверьте логи' : 'Ожидает подключения'}</span><div className="telegram-meta"><span><CheckCircle2 size={13} /> Long polling</span><span><ShieldCheck size={13} /> Команды через polling</span></div><button className="button button-light" onClick={() => onNavigate('documents')}>Как подключить <ArrowRight size={14} /></button></div></section>
+  </div>
 }
 
 function PageToolbar({ search, setSearch, placeholder = 'Поиск по реестру...' }: { search: string; setSearch: (value: string) => void; placeholder?: string }) {
@@ -359,8 +435,21 @@ function DocumentsView({ onMessage, competitions, athletes, user, role }: { onMe
   </div><div className="prototype-note"><CircleHelp size={17} /><span>Экспорт подключён к API. Проверьте, что у выбранного соревнования уже есть результаты, а у спортсмена — история выступлений: пустые документы будут содержать только доступные записи.</span></div></>
 }
 
-function NotificationsView({ items }: { items: Notice[] }) {
-  return <div className="panel notifications-full"><div className="table-header-copy"><div><h3>Входящие уведомления</h3><p>Системные задачи и напоминания для Федерации</p></div><span className="total-chip">{items.length} сообщения</span></div><div className="notifications-full-list">{items.map(n => <div className="notifications-full-row" key={n.id}><div className={`notice-mark notice-${n.kind}`}>{n.kind === 'warning' ? <Activity size={17} /> : n.kind === 'success' ? <CheckCircle2 size={17} /> : <Bell size={17} />}</div><div className="notifications-full-copy"><div><b>{n.title}</b><span>{n.when}</span></div><p>{n.message}</p></div><span className={`notice-label label-${n.kind}`}>{n.kind === 'warning' ? 'Внимание' : n.kind === 'success' ? 'Готово' : 'Информация'}</span></div>)}</div></div>
+function NotificationsView({ items, telegramStatus, telegramLinkStatus, telegramLinkCode, telegramLinkBusy, onGenerateCode, onUnlink }: { items: Notice[]; telegramStatus: TelegramStatus; telegramLinkStatus: TelegramLinkStatus; telegramLinkCode: string; telegramLinkBusy: boolean; onGenerateCode: () => void; onUnlink: () => void }) {
+  const telegramReady = telegramStatus.configured && telegramStatus.polling_enabled
+  return <div className="notifications-page-stack">
+    <section className="panel telegram-link-panel">
+      <div className="telegram-link-mark"><Send size={20} /></div>
+      <div className="telegram-link-copy"><div className="panel-kicker">ВНЕШНИЙ КАНАЛ УВЕДОМЛЕНИЙ</div><h3>Подключение Telegram</h3>
+        <p>{telegramLinkStatus.linked ? 'Аккаунт Telegram связан с вашей учётной записью ФСП 56. Персональные уведомления о решениях по заявкам, разрядам, категориям и публикации результатов будут приходить в мессенджер.' : 'Свяжите свой аккаунт Telegram с платформой, чтобы получать персональные сообщения о решениях по заявкам, разрядам и судейским категориям, а также о публикации результатов.'}</p>
+        {!telegramStatus.configured && <div className="prototype-note"><CircleHelp size={16} /><span>Telegram-бот ещё не настроен. Добавьте TELEGRAM_BOT_TOKEN в .env и перезапустите API; публичный URL для локальной проверки не нужен.</span></div>}
+        {telegramStatus.configured && !telegramStatus.polling_enabled && <div className="prototype-note"><CircleHelp size={16} /><span>Токен задан, но long polling не запущен. Проверьте журналы API и правильность токена.</span></div>}
+        {!telegramLinkStatus.linked && telegramLinkCode && <div className="telegram-pairing-code"><span>ОДНОРАЗОВЫЙ КОД · 10 МИНУТ</span><b>{telegramLinkCode}</b><code>/link {telegramLinkCode}</code><small>Откройте бота Telegram, нажмите «Запустить» и отправьте ему команду выше. Код можно использовать один раз.</small></div>}
+      </div>
+      <div className="telegram-link-actions">{telegramLinkStatus.linked ? <><span className="telegram-linked-state"><CheckCircle2 size={14} /> Аккаунт подключён</span><button className="button button-light" disabled={telegramLinkBusy} onClick={onUnlink}>Отключить</button></> : <button className="button button-primary" disabled={telegramLinkBusy || !telegramReady} onClick={onGenerateCode} title={!telegramReady ? 'Сначала настройте Telegram на сервере' : undefined}>{telegramLinkBusy ? 'Создаём код…' : telegramLinkCode ? 'Создать новый код' : 'Получить код подключения'}</button>}</div>
+    </section>
+    <div className="panel notifications-full"><div className="table-header-copy"><div><h3>Входящие уведомления</h3><p>Системные задачи и напоминания для Федерации</p></div><span className="total-chip">{items.length} сообщения</span></div><div className="notifications-full-list">{items.map(n => <div className="notifications-full-row" key={n.id}><div className={`notice-mark notice-${n.kind}`}>{n.kind === 'warning' ? <Activity size={17} /> : n.kind === 'success' ? <CheckCircle2 size={17} /> : <Bell size={17} />}</div><div className="notifications-full-copy"><div><b>{n.title}</b><span>{n.when}</span></div><p>{n.message}</p></div><span className={`notice-label label-${n.kind}`}>{n.kind === 'warning' ? 'Внимание' : n.kind === 'success' ? 'Готово' : 'Информация'}</span></div>)}</div></div>
+  </div>
 }
 
 function CreateCompetitionModal({ onClose, onCreated, onError }: { onClose: () => void; onCreated: () => Promise<void>; onError: (message: string) => void }) {

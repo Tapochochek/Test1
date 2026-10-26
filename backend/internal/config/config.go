@@ -11,35 +11,29 @@ const (
 )
 
 type Config struct {
-	Port             string
-	DatabaseURL      string
-	MaxBotToken      string
-	MaxWebhookSecret string
-	MaxDefaultChatID string
-	MaxAPIBaseURL    string
+	Port                  string
+	DatabaseURL           string
+	TelegramBotToken      string
+	TelegramDefaultChatID string
+	TelegramAPIBaseURL    string
 }
 
 func Load() Config {
 	return Config{
-		Port:             env("PORT", DefaultPort),
-		DatabaseURL:      env("DATABASE_URL", DefaultDatabase),
-		MaxBotToken:      env("MAX_BOT_TOKEN", ""),
-		MaxWebhookSecret: env("MAX_WEBHOOK_SECRET", ""),
-		MaxDefaultChatID: env("MAX_DEFAULT_CHAT_ID", ""),
-		MaxAPIBaseURL:    "https://platform-api2.max.ru",
+		Port:                  env("PORT", DefaultPort),
+		DatabaseURL:           env("DATABASE_URL", DefaultDatabase),
+		TelegramBotToken:      env("TELEGRAM_BOT_TOKEN", ""),
+		TelegramDefaultChatID: env("TELEGRAM_DEFAULT_CHAT_ID", ""),
+		TelegramAPIBaseURL:    "https://api.telegram.org",
 	}
 }
 
-func (c Config) MaxConfigured() bool {
-	return c.MaxBotToken != ""
+func (c Config) TelegramConfigured() bool {
+	return strings.TrimSpace(c.TelegramBotToken) != ""
 }
 
 func (c Config) DefaultChatConfigured() bool {
-	return c.MaxDefaultChatID != ""
-}
-
-func (c Config) WebhookSecretConfigured() bool {
-	return c.MaxWebhookSecret != ""
+	return strings.TrimSpace(c.TelegramDefaultChatID) != ""
 }
 
 func env(key, fallback string) string {

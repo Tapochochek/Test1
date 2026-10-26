@@ -1,35 +1,29 @@
 package config
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("PORT", "")
 	t.Setenv("DATABASE_URL", "")
-	t.Setenv("MAX_BOT_TOKEN", "")
-	t.Setenv("MAX_WEBHOOK_SECRET", "")
-	t.Setenv("MAX_DEFAULT_CHAT_ID", "")
-
+	t.Setenv("TELEGRAM_BOT_TOKEN", "")
+	t.Setenv("TELEGRAM_DEFAULT_CHAT_ID", "")
 	cfg := Load()
 	if cfg.Port != DefaultPort {
 		t.Fatalf("port: got %q want %q", cfg.Port, DefaultPort)
 	}
 	if cfg.DatabaseURL != DefaultDatabase {
-		t.Fatalf("database url mismatch")
+		t.Fatal("database url mismatch")
 	}
-	if cfg.MaxConfigured() || cfg.WebhookSecretConfigured() || cfg.DefaultChatConfigured() {
-		t.Fatal("MAX flags must be false when env is empty")
+	if cfg.TelegramConfigured() || cfg.DefaultChatConfigured() {
+		t.Fatal("Telegram flags must be false when environment is empty")
 	}
 }
 
 func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("PORT", "9090")
 	t.Setenv("DATABASE_URL", "postgres://demo")
-	t.Setenv("MAX_BOT_TOKEN", " token ")
-	t.Setenv("MAX_WEBHOOK_SECRET", "secret")
-	t.Setenv("MAX_DEFAULT_CHAT_ID", "123")
-
+	t.Setenv("TELEGRAM_BOT_TOKEN", " token ")
+	t.Setenv("TELEGRAM_DEFAULT_CHAT_ID", "-100123")
 	cfg := Load()
 	if cfg.Port != "9090" {
 		t.Fatalf("port: got %q", cfg.Port)
@@ -37,10 +31,13 @@ func TestLoadFromEnv(t *testing.T) {
 	if cfg.DatabaseURL != "postgres://demo" {
 		t.Fatalf("database: got %q", cfg.DatabaseURL)
 	}
-	if cfg.MaxBotToken != "token" {
-		t.Fatalf("token should be trimmed, got %q", cfg.MaxBotToken)
+	if cfg.TelegramBotToken != "token" {
+		t.Fatalf("token should be trimmed, got %q", cfg.TelegramBotToken)
 	}
-	if !cfg.MaxConfigured() || !cfg.WebhookSecretConfigured() || !cfg.DefaultChatConfigured() {
-		t.Fatal("MAX flags must be true when env is set")
+	if !cfg.TelegramConfigured() || !cfg.DefaultChatConfigured() {
+		t.Fatal("Telegram flags must be true when values are set")
+	}
+	if cfg.TelegramAPIBaseURL != "https://api.telegram.org" {
+		t.Fatalf("unexpected Telegram API base URL %q", cfg.TelegramAPIBaseURL)
 	}
 }

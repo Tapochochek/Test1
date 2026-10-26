@@ -213,12 +213,12 @@ paths:
                 type: object
                 properties:
                   items: { type: array, items: { $ref: '#/components/schemas/Notification' } }
-  /api/integrations/max/status:
+  /api/integrations/telegram/status:
     get:
-      summary: Проверить конфигурацию MAX
+      summary: Проверить конфигурацию Telegram-бота
       responses:
         '200':
-          description: Наличие переменных конфигурации без раскрытия секретов
+          description: Конфигурация и состояние long polling без раскрытия токена
           content:
             application/json:
               schema:
@@ -226,27 +226,53 @@ paths:
                 properties:
                   configured: { type: boolean }
                   default_chat_configured: { type: boolean }
-                  webhook_secret_configured: { type: boolean }
-                  webhook_path: { type: string }
-  /api/integrations/max/webhook:
-    post:
-      summary: Принимать события MAX
-      description: При заданном MAX_WEBHOOK_SECRET проверяется заголовок X-Max-Bot-Api-Secret. В production нужен публичный HTTPS endpoint.
-      parameters:
-        - in: header
-          name: X-Max-Bot-Api-Secret
-          required: false
-          schema: { type: string }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { type: object, additionalProperties: true }
+                  mode: { type: string, enum: [long_polling] }
+                  polling_enabled: { type: boolean }
+  /api/integrations/telegram/link-status:
+    get:
+      summary: Проверить, связан ли текущий аккаунт с Telegram
+      security: [{ bearerAuth: [] }]
       responses:
-        '200': { description: Событие принято }
-        '400': { description: Некорректное событие }
-        '401': { description: Неверный секрет webhook }
+        '200':
+          description: Статус привязки без раскрытия внешнего ID пользователя
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [linked]
+                properties:
+                  linked: { type: boolean }
+        '401': { description: Требуется авторизация }
+  /api/integrations/telegram/link-code:
+    post:
+      summary: Создать одноразовый код привязки Telegram
+      security: [{ bearerAuth: [] }]
+      responses:
+        '201':
+          description: Код действует 10 минут и может быть использован один раз
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code, expires_in_seconds]
+                properties:
+                  code: { type: string, pattern: '^[0-9]{8}$' }
+                  expires_in_seconds: { type: integer, example: 600 }
+        '401': { description: Требуется авторизация }
+        '500': { description: Не удалось создать код }
+  /api/integrations/telegram/link:
+    delete:
+      summary: Отключить Telegram от текущего аккаунта
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Привязка отключена }
+        '401': { description: Требуется авторизация }
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Opaque session token
   schemas:
     Competition:
       type: object
@@ -299,9 +325,3 @@ components:
         message: { type: string }
         when: { type: string }
 
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: Opaque session token
