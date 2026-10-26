@@ -1,0 +1,41 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orenkod
+      POSTGRES_USER: orenkod
+      POSTGRES_PASSWORD: orenkod_local
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orenkod -d orenkod"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgres://orenkod:orenkod_local@db:5432/orenkod?sslmode=disable
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
+      MAX_WEBHOOK_SECRET: ${MAX_WEBHOOK_SECRET:-}
+      MAX_DEFAULT_CHAT_ID: ${MAX_DEFAULT_CHAT_ID:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
