@@ -18,7 +18,27 @@ docker compose up --build
 - API: <http://localhost:8081/api/health>
 - PostgreSQL доступен только внутри compose-сети на сервисе `db`.
 
-При первом запуске API создаёт таблицы и заполняет базу демонстрационными данными. Имена, организации и результаты вымышлены. Состояние базы хранится в volume `postgres_data`.
+При первом запуске API создаёт таблицы и заполняет базу демонстрационными данными. Имена, организации и результаты вымышлены. Состояние базы хранится в volume `postgres_data`. Повторный запуск не дублирует демо-записи.
+
+### Локальная разработка API
+
+Нужны Go 1.23+ и PostgreSQL. Из каталога `backend`:
+
+```bash
+cd backend
+# PowerShell: $env:DATABASE_URL="postgres://orenkod:orenkod_local@localhost:5432/orenkod?sslmode=disable"
+# bash: export DATABASE_URL=postgres://orenkod:orenkod_local@localhost:5432/orenkod?sslmode=disable
+go run ./cmd/api
+```
+
+Тесты и проверка сборки:
+
+```bash
+cd backend
+go test ./...
+go vet ./...
+go build ./...
+```
 
 Сбросить демонстрационную базу:
 
@@ -40,10 +60,19 @@ docker compose up --build
 ## Структура
 
 ```text
-frontend/                  React + TypeScript + Vite + CSS
-backend/                   Go HTTP API + pgx
-backend/migrations/        схема PostgreSQL
-docker-compose.yml         web + api + postgres
+frontend/                         React + TypeScript + Vite + CSS
+backend/cmd/api                   точка входа HTTP API
+backend/internal/config           переменные окружения
+backend/internal/database         PostgreSQL, миграции, seed
+backend/internal/competitions     соревнования
+backend/internal/athletes         реестр спортсменов
+backend/internal/ratings          рейтинг и сборная
+backend/internal/dashboard        сводка главной страницы
+backend/internal/notifications    демонстрационные уведомления
+backend/internal/integrations/max клиент и webhook MAX
+backend/internal/httpserver       маршруты, CORS, JSON
+backend/migrations/               схема PostgreSQL
+docker-compose.yml                web + api + postgres
 ```
 
 ## API
@@ -74,11 +103,15 @@ docker-compose.yml         web + api + postgres
 }
 ```
 
+Поле `applications` в `GET /api/dashboard` — сумма `participants` у соревнований со статусом «Регистрация» и «Планируется». Отдельной сущности заявок в базе нет.
+
+Переменные окружения: `PORT` (по умолчанию `8080`), `DATABASE_URL`, `MAX_BOT_TOKEN`, `MAX_WEBHOOK_SECRET`, `MAX_DEFAULT_CHAT_ID`. Значения по умолчанию для БД рассчитаны на локальную разработку. Не коммитьте токены в репозиторий.
+
 ## Подключение MAX
 
 1. Создать и пройти модерацию бота в MAX для бизнеса. Создание бота сейчас связано с верифицированным профилем организации, ИП или самозанятого — уточните, может ли Федерация оформить нужный профиль.
 2. Скопировать `.env.example` в `.env`, заполнить `MAX_BOT_TOKEN` и задать случайный `MAX_WEBHOOK_SECRET`.
-3. Развернуть API на публичном HTTPS-домене с действительным сертификатом. Для MAX webhook используется HTTPS, а запросы проверяются по заголовку `X-Max-Bot-Api-Secret`.
+3. Развернуть API на публичном HTTPS-домене с действительным сертификатом. Если задан `MAX_WEBHOOK_SECRET`, запросы проверяются по заголовку `X-Max-Bot-Api-Secret`. Если секрет не задан, webhook принимает события без этой проверки — так удобно только для локальной отладки.
 4. Подписать бота на события `message_created` и `bot_started`, указав секрет и путь `/api/integrations/max/webhook`. Сама регистрация подписки в этом прототипе пока выполняется вручную через официальный API.
 5. Перезапустить сервисы: `docker compose up --build -d`.
 
