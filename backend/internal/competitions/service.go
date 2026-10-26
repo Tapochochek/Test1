@@ -74,6 +74,19 @@ func NormalizeCreate(input CreateInput) (CreateInput, time.Time, error) {
 	if input.Location == "" {
 		input.Location = "Оренбург"
 	}
+	if input.SportStatus == "" {
+		input.SportStatus = "региональное"
+	}
+	if input.EventFormat == "" {
+		input.EventFormat = "очно"
+	}
+	if input.CalendarPlan == "" {
+		if input.SportStatus == "региональное" {
+			input.CalendarPlan = "Календарный план Оренбургской области"
+		} else {
+			input.CalendarPlan = "ЕКП Минспорта России"
+		}
+	}
 	return input, starts, nil
 }
 

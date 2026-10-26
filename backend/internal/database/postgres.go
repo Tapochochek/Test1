@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
+	"sort"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -45,12 +47,25 @@ func Connect(ctx context.Context, dsn string) (*sql.DB, error) {
 }
 
 func ApplySchema(ctx context.Context, db *sql.DB) error {
-	schema, err := migrations.Files.ReadFile("001_init.sql")
+	entries, err := fs.ReadDir(migrations.Files, ".")
 	if err != nil {
 		return err
 	}
-	if _, err := db.ExecContext(ctx, string(schema)); err != nil {
-		return fmt.Errorf("apply schema: %w", err)
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && len(entry.Name()) > 4 && entry.Name()[len(entry.Name())-4:] == ".sql" {
+			names = append(names, entry.Name())
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		schema, err := migrations.Files.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		if _, err := db.ExecContext(ctx, string(schema)); err != nil {
+			return fmt.Errorf("apply schema %s: %w", name, err)
+		}
 	}
 	return nil
 }

@@ -18,10 +18,13 @@ func NewRepository(db *sql.DB) *Repository {
 	return &Repository{db: db}
 }
 
+const competitionCols = `id,title,discipline,competition_type,age_group,starts_at,location,status,participants,
+sport_status,event_format,calendar_plan,calendar_number,regulation,applications_until`
+
 func (r *Repository) List(ctx context.Context, upcomingOnly bool) ([]Competition, error) {
-	query := `SELECT id,title,discipline,competition_type,age_group,starts_at,location,status,participants FROM competitions ORDER BY (starts_at < NOW()) ASC, starts_at ASC`
+	query := `SELECT ` + competitionCols + ` FROM competitions ORDER BY (starts_at < NOW()) ASC, starts_at ASC`
 	if upcomingOnly {
-		query = `SELECT id,title,discipline,competition_type,age_group,starts_at,location,status,participants FROM competitions WHERE starts_at >= NOW() - INTERVAL '1 day' ORDER BY starts_at ASC LIMIT 4`
+		query = `SELECT ` + competitionCols + ` FROM competitions WHERE starts_at >= NOW() - INTERVAL '1 day' ORDER BY starts_at ASC LIMIT 6`
 	}
 	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
@@ -39,18 +42,19 @@ func (r *Repository) List(ctx context.Context, upcomingOnly bool) ([]Competition
 	return items, rows.Err()
 }
 
+func (r *Repository) Get(ctx context.Context, id int64) (Competition, error) {
+	return scanCompetition(r.db.QueryRowContext(ctx, `SELECT `+competitionCols+` FROM competitions WHERE id=$1`, id))
+}
+
 func (r *Repository) Create(ctx context.Context, input CreateInput, starts time.Time) (Competition, error) {
-	var c Competition
-	var stored time.Time
-	err := r.db.QueryRowContext(ctx, `INSERT INTO competitions(title,discipline,competition_type,age_group,starts_at,location,status,participants)
-		VALUES($1,$2,$3,$4,$5,$6,'Черновик',0) RETURNING id,title,discipline,competition_type,age_group,starts_at,location,status,participants`,
-		input.Title, input.Discipline, input.CompetitionType, input.AgeGroup, starts, input.Location).
-		Scan(&c.ID, &c.Title, &c.Discipline, &c.CompetitionType, &c.AgeGroup, &stored, &c.Location, &c.Status, &c.Participants)
-	if err != nil {
-		return Competition{}, err
+	var until any
+	if strings.TrimSpace(input.ApplicationsUntil) != "" {
+		until = input.ApplicationsUntil
 	}
-	c.StartsAt = stored.Format(time.RFC3339)
-	return c, nil
+	return scanCompetition(r.db.QueryRowContext(ctx, `INSERT INTO competitions(title,discipline,competition_type,age_group,starts_at,location,status,participants,sport_status,event_format,calendar_plan,calendar_number,regulation,applications_until)
+		VALUES($1,$2,$3,$4,$5,$6,'Черновик',0,$7,$8,$9,$10,$11,$12) RETURNING `+competitionCols,
+		input.Title, input.Discipline, input.CompetitionType, input.AgeGroup, starts, input.Location,
+		input.SportStatus, input.EventFormat, input.CalendarPlan, input.CalendarNumber, input.Regulation, until))
 }
 
 func IsDuplicateTitle(err error) bool {
@@ -68,9 +72,14 @@ type rowScanner interface {
 func scanCompetition(row rowScanner) (Competition, error) {
 	var c Competition
 	var starts time.Time
-	if err := row.Scan(&c.ID, &c.Title, &c.Discipline, &c.CompetitionType, &c.AgeGroup, &starts, &c.Location, &c.Status, &c.Participants); err != nil {
+	var until sql.NullTime
+	if err := row.Scan(&c.ID, &c.Title, &c.Discipline, &c.CompetitionType, &c.AgeGroup, &starts, &c.Location, &c.Status, &c.Participants,
+		&c.SportStatus, &c.EventFormat, &c.CalendarPlan, &c.CalendarNumber, &c.Regulation, &until); err != nil {
 		return Competition{}, err
 	}
 	c.StartsAt = starts.Format(time.RFC3339)
+	if until.Valid {
+		c.ApplicationsUntil = until.Time.Format(time.RFC3339)
+	}
 	return c, nil
 }

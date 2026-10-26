@@ -14,6 +14,8 @@ type Stats struct {
 	Competitions int `json:"competitions"`
 	Applications int `json:"applications"`
 	Judges       int `json:"judges"`
+	Ranks        int `json:"ranks"`
+	Expiring     int `json:"expiring"`
 }
 
 type Snapshot struct {
@@ -35,20 +37,14 @@ func NewRepository(db *sql.DB, competitionsRepo *competitions.Repository, rating
 }
 
 func (r *Repository) Snapshot(ctx context.Context) (Snapshot, error) {
-	var athletes, totalCompetitions, activeCompetitions, participantSum int
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM athletes`).Scan(&athletes); err != nil {
-		return Snapshot{}, err
-	}
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM competitions`).Scan(&totalCompetitions); err != nil {
-		return Snapshot{}, err
-	}
-	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM competitions WHERE status IN ('Регистрация','Планируется')`).Scan(&activeCompetitions); err != nil {
-		return Snapshot{}, err
-	}
-	// participants is a stored count on competitions, not a separate applications entity.
-	if err := r.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(participants),0) FROM competitions WHERE status IN ('Регистрация','Планируется')`).Scan(&participantSum); err != nil {
-		return Snapshot{}, err
-	}
+	var athletes, totalCompetitions, activeCompetitions, pendingApps, judges, pendingRanks, expiring int
+	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM athletes`).Scan(&athletes)
+	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM competitions`).Scan(&totalCompetitions)
+	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM competitions WHERE status IN ('Регистрация','Планируется')`).Scan(&activeCompetitions)
+	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM applications WHERE status='pending'`).Scan(&pendingApps)
+	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM judges`).Scan(&judges)
+	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM rank_applications WHERE status='pending'`).Scan(&pendingRanks)
+	_ = r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM athletes WHERE rank_expires_at IS NOT NULL AND rank_expires_at <= CURRENT_DATE + INTERVAL '90 days'`).Scan(&expiring)
 	items, err := r.competitions.List(ctx, true)
 	if err != nil {
 		return Snapshot{}, err
@@ -61,8 +57,10 @@ func (r *Repository) Snapshot(ctx context.Context) (Snapshot, error) {
 		Stats: Stats{
 			Athletes:     athletes,
 			Competitions: activeCompetitions,
-			Applications: participantSum,
-			Judges:       24,
+			Applications: pendingApps,
+			Judges:       judges,
+			Ranks:        pendingRanks,
+			Expiring:     expiring,
 		},
 		CompetitionsTotal: totalCompetitions,
 		Competitions:      items,

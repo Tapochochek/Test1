@@ -2,11 +2,98 @@ openapi: 3.1.0
 info:
   title: ОренКод — API цифровой платформы ФСП
   version: 0.1.0
-  description: Стартовый API-прототип. Ролевая авторизация и часть бизнес-сценариев пока не реализованы.
+  description: API-прототип с Bearer-сессиями, регистрацией и серверной проверкой ролей. Часть бизнес-сценариев ещё требует интеграционного тестирования.
 servers:
   - url: http://localhost:8081
     description: Локальный API при запуске через Docker Compose
 paths:
+  /api/auth/register:
+    post:
+      summary: Зарегистрировать спортсмена, тренера или судью
+      description: Роль Федерации нельзя выбрать через публичную регистрацию. Успешный ответ содержит token и user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, full_name, organization, role, consent_personal]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                full_name: { type: string }
+                role: { type: string, enum: [athlete, coach, judge] }
+                birth_date: { type: string, format: date }
+                municipality: { type: string }
+                organization: { type: string }
+                phone: { type: string }
+                discipline: { type: string }
+                age_group: { type: string }
+                consent_personal: { type: boolean }
+                guardian_name: { type: string }
+                guardian_consent: { type: boolean }
+      responses:
+        '201': { description: Аккаунт создан и пользователь вошёл в систему }
+        '400': { description: Ошибка валидации }
+        '409': { description: Email уже зарегистрирован }
+  /api/auth/login:
+    post:
+      summary: Войти по email и паролю
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: Сессия создана; ответ содержит token и user }
+        '401': { description: Неверный email или пароль }
+  /api/auth/me:
+    get:
+      summary: Получить текущий аккаунт и назначенные роли
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Текущий пользователь }
+        '401': { description: Требуется авторизация }
+  /api/auth/switch-role:
+    post:
+      summary: Сменить активную роль
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [federation, athlete, coach, judge] }
+      responses:
+        '200': { description: Активная роль изменена }
+        '400': { description: Роль не назначена аккаунту }
+  /api/auth/logout:
+    post:
+      summary: Завершить текущую сессию
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Сессия завершена }
+  /api/athletes/{id}/approve:
+    post:
+      summary: Подтвердить профиль спортсмена
+      description: Доступно только Федерации; после подтверждения спортсмен может подавать заявки.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer }
+      responses:
+        '200': { description: Профиль подтверждён }
+        '403': { description: Недостаточно прав }
   /api/health:
     get:
       summary: Проверить состояние API и PostgreSQL
@@ -211,3 +298,10 @@ components:
         title: { type: string }
         message: { type: string }
         when: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Opaque session token
