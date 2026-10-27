@@ -13,6 +13,7 @@ import (
 	"orenkod/backend/internal/athletes"
 	"orenkod/backend/internal/auth"
 	"orenkod/backend/internal/competitions"
+	"orenkod/backend/internal/emailcode"
 	"orenkod/backend/internal/exportutil"
 	"orenkod/backend/internal/httpserver"
 	"orenkod/backend/internal/integrations/telegram"
@@ -25,6 +26,7 @@ type Handler struct {
 	comp   *competitions.Service
 	ath    *athletes.Repository
 	notify *telegram.Client
+	Codes  *emailcode.Service // коды подтверждения email; nil — проверка отключена
 }
 
 func New(db *sql.DB, authService *auth.Service, comp *competitions.Service, ath *athletes.Repository, notify *telegram.Client) *Handler {
@@ -37,6 +39,10 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&input); err != nil {
 		httpserver.WriteError(w, http.StatusBadRequest, "Проверьте формат данных регистрации")
+		return
+	}
+	if h.Codes != nil && !h.Codes.Verify(input.Email, input.EmailCode) {
+		httpserver.WriteError(w, http.StatusBadRequest, "Неверный или просроченный код из письма")
 		return
 	}
 	if err := h.auth.Register(r.Context(), input); err != nil {
@@ -53,6 +59,22 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpserver.WriteJSON(w, http.StatusCreated, map[string]any{"token": token, "user": user})
+}
+
+func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || h.Codes == nil {
+		httpserver.WriteError(w, http.StatusBadRequest, "Проверьте формат данных")
+		return
+	}
+	delivered, err := h.Codes.Send(input.Email)
+	if err != nil {
+		httpserver.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"status": "sent", "delivered": delivered})
 }
 
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +218,6 @@ func (h *Handler) PublishCompetition(w http.ResponseWriter, r *http.Request) {
 	}
 	h.notifyRole(r, "", "info", "Соревнование опубликовано", "Федерация опубликовала событие в календаре.")
 	h.audit(r, "публикация соревнования", "competitions", strconv.FormatInt(id, 10))
-	h.emit("competition.published", map[string]any{"competition_id": id})
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "status": status})
 }
 
@@ -309,9 +330,6 @@ func (h *Handler) DecideApplication(w http.ResponseWriter, r *http.Request) {
 		h.notify.NotifyUser(telegramUserID.Int64, message)
 	}
 	h.audit(r, "модерация заявки", "applications", input.Status)
-	if input.Status == "approved" {
-		h.emit("application.approved", map[string]any{"application_id": id})
-	}
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -538,10 +556,9 @@ func (h *Handler) SaveResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.recalculatePoints(r)
-	h.notifyRole(r, rules.RoleAthlete, "success", "Протокол опубликован", "Результаты соревнования доступны в истории выступлений.")
+	h.notifyInbox(r, rules.RoleAthlete, "success", "Протокол опубликован", "Результаты соревнования доступны в истории выступлений.")
 	h.notifyLinkedAthletesOfResults(r, id)
 	h.audit(r, "ввод результатов", "results", strconv.FormatInt(id, 10))
-	h.emit("protocol.published", map[string]any{"competition_id": id, "source": "manual"})
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1282,10 +1299,44 @@ func (h *Handler) notifyLinkedAthletesOfResults(r *http.Request, competitionID i
 	}
 }
 
+// notifyRole stores a notification in the in-app inbox and mirrors it to Telegram:
+// personally to every linked user holding the role (all linked users when role is empty)
+// and to the shared chat when TELEGRAM_DEFAULT_CHAT_ID is configured.
 func (h *Handler) notifyRole(r *http.Request, role, kind, title, message string) {
-	_, _ = h.db.ExecContext(r.Context(), `INSERT INTO inbox(role_scope,kind,title,message) VALUES($1,$2,$3,$4)`, role, kind, title, message)
-	if h.notify != nil {
-		h.notify.NotifyChannel(title, message)
+	h.notifyInbox(r, role, kind, title, message)
+	if h.notify == nil {
+		return
+	}
+	h.notify.NotifyChannel(title, message)
+	h.notifyLinkedByRole(r, role, title+"\n\n"+message)
+}
+
+// notifyInbox only writes to the in-app inbox (no Telegram).
+func (h *Handler) notifyInbox(r *http.Request, role, kind, title, message string) {
+	if _, err := h.db.ExecContext(r.Context(), `INSERT INTO inbox(role_scope,kind,title,message) VALUES($1,$2,$3,$4)`, role, kind, title, message); err != nil {
+		log.Printf("inbox insert: %v", err)
+	}
+}
+
+func (h *Handler) notifyLinkedByRole(r *http.Request, role, text string) {
+	if h.notify == nil || !h.notify.Configured() {
+		return
+	}
+	rows, err := h.db.QueryContext(r.Context(), `SELECT DISTINCT u.telegram_user_id
+		FROM users u
+		WHERE u.telegram_user_id IS NOT NULL
+		  AND ($1 = '' OR EXISTS (SELECT 1 FROM user_roles ur WHERE ur.user_id=u.id AND ur.role=$1))`, role)
+	if err != nil {
+		log.Printf("Telegram role notification lookup: %v", err)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tgID int64
+		if err := rows.Scan(&tgID); err != nil {
+			continue
+		}
+		h.notify.NotifyUser(tgID, text)
 	}
 }
 

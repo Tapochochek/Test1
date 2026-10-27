@@ -339,6 +339,7 @@ type Registration struct {
 	ConsentPersonal bool   `json:"consent_personal"`
 	GuardianName    string `json:"guardian_name"`
 	GuardianConsent bool   `json:"guardian_consent"`
+	EmailCode       string `json:"email_code"`
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

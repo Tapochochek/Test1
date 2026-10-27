@@ -17,6 +17,7 @@ import (
 	"orenkod/backend/internal/dashboard"
 	"orenkod/backend/internal/database"
 	"orenkod/backend/internal/httpserver"
+	"orenkod/backend/internal/emailcode"
 	"orenkod/backend/internal/integrations/telegram"
 	"orenkod/backend/internal/notifications"
 	"orenkod/backend/internal/platform"
@@ -51,7 +52,7 @@ func main() {
 	notificationsHandler := notifications.NewHandler()
 	telegramHandler := telegram.NewBotHandler(telegramClient, competitionsService, ratingsRepo, db)
 	go telegramHandler.Run(ctx)
-	go platformHandler.RunDeadlineWatcher(ctx, time.Hour, 60)
+	platformHandler.Codes = emailcode.New(emailcode.Config{Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Password: cfg.SMTPPassword, From: cfg.SMTPFrom})
 
 	handler := httpserver.NewRouter(httpserver.Routes{
 		Health:            dashboardHandler.Health,
@@ -67,6 +68,7 @@ func main() {
 		Platform: httpserver.PlatformRoutes{
 			Login:              platformHandler.Login,
 			Register:           platformHandler.Register,
+			SendCode:           platformHandler.SendCode,
 			Logout:             platformHandler.Logout,
 			Me:                 platformHandler.Me,
 			Switch:             platformHandler.SwitchRole,
@@ -106,29 +108,6 @@ func main() {
 			TelegramLinkCode:   platformHandler.CreateTelegramLinkCode,
 			TelegramLinkStatus: platformHandler.TelegramLinkStatus,
 			TelegramUnlink:     platformHandler.UnlinkTelegram,
-			TokenCreate:        platformHandler.TokenCreate,
-			IntegrationsList:   platformHandler.IntegrationsList,
-			WebhookCreate:      platformHandler.WebhookCreate,
-			ExtCompetitions:    platformHandler.ExtCompetitions,
-			ExtRating:          platformHandler.ExtRating,
-			ExtImportResults:   platformHandler.ExtImportResults,
-			OIDCDiscovery:      platformHandler.OIDCDiscovery,
-			OIDCAuthorizePage:  platformHandler.OIDCAuthorizePage,
-			OIDCAuthorizeInfo:  platformHandler.OIDCAuthorizeInfo,
-			OIDCApprove:        platformHandler.OIDCApprove,
-			OIDCToken:          platformHandler.OIDCToken,
-			OIDCUserinfo:       platformHandler.OIDCUserinfo,
-			OIDCDemoPage:       platformHandler.OIDCDemoPage,
-			OIDCClientCreate:   platformHandler.OIDCClientCreate,
-			OIDCClientList:     platformHandler.OIDCClientList,
-			Premiums:           platformHandler.Premiums,
-			PremiumStatus:      platformHandler.PremiumStatus,
-			PremiumScale:       platformHandler.PremiumScale,
-			Norms:              platformHandler.Norms,
-			SaveNorm:           platformHandler.SaveNorm,
-			SaveNormResult:     platformHandler.SaveNormResult,
-			Attestation:        platformHandler.Attestation,
-			Promote:            platformHandler.Promote,
 			Inbox:              platformHandler.Inbox,
 			Rating:             platformHandler.Rating,
 			TeamGet:            platformHandler.TeamGet,

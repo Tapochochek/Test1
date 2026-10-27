@@ -16,6 +16,7 @@ type Config struct {
 	TelegramBotToken      string
 	TelegramDefaultChatID string
 	TelegramAPIBaseURL    string
+	SMTPHost, SMTPPort, SMTPUser, SMTPPassword, SMTPFrom string
 }
 
 func Load() Config {
@@ -25,6 +26,11 @@ func Load() Config {
 		TelegramBotToken:      env("TELEGRAM_BOT_TOKEN", ""),
 		TelegramDefaultChatID: env("TELEGRAM_DEFAULT_CHAT_ID", ""),
 		TelegramAPIBaseURL:    "https://api.telegram.org",
+		SMTPHost:              env("SMTP_HOST", ""),
+		SMTPPort:              env("SMTP_PORT", "587"),
+		SMTPUser:              env("SMTP_USER", ""),
+		SMTPPassword:          env("SMTP_PASSWORD", ""),
+		SMTPFrom:              env("SMTP_FROM", ""),
 	}
 }
 
