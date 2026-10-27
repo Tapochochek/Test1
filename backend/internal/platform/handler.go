@@ -196,6 +196,7 @@ func (h *Handler) PublishCompetition(w http.ResponseWriter, r *http.Request) {
 	}
 	h.notifyRole(r, "", "info", "Соревнование опубликовано", "Федерация опубликовала событие в календаре.")
 	h.audit(r, "публикация соревнования", "competitions", strconv.FormatInt(id, 10))
+	h.emit("competition.published", map[string]any{"competition_id": id})
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "status": status})
 }
 
@@ -308,6 +309,9 @@ func (h *Handler) DecideApplication(w http.ResponseWriter, r *http.Request) {
 		h.notify.NotifyUser(telegramUserID.Int64, message)
 	}
 	h.audit(r, "модерация заявки", "applications", input.Status)
+	if input.Status == "approved" {
+		h.emit("application.approved", map[string]any{"application_id": id})
+	}
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -537,6 +541,7 @@ func (h *Handler) SaveResults(w http.ResponseWriter, r *http.Request) {
 	h.notifyRole(r, rules.RoleAthlete, "success", "Протокол опубликован", "Результаты соревнования доступны в истории выступлений.")
 	h.notifyLinkedAthletesOfResults(r, id)
 	h.audit(r, "ввод результатов", "results", strconv.FormatInt(id, 10))
+	h.emit("protocol.published", map[string]any{"competition_id": id, "source": "manual"})
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

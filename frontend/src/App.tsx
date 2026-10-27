@@ -5,10 +5,11 @@ import {
   FileBadge, FileText, Filter, Flag, LayoutDashboard, Menu, Plus, Search,
   ShieldCheck, Users, UserRound, Trophy, X, LogOut, Sun, Moon, Monitor, Send,
 } from 'lucide-react'
+import ProcessesView from './Processes'
 import fspLogo from './assets/fsp-logo.svg'
 import fspLogoDark from './assets/fsp-logo-dark.svg'
 
-type PageKey = 'overview' | 'competitions' | 'participants' | 'rating' | 'team' | 'documents' | 'notifications'
+type PageKey = 'overview' | 'competitions' | 'participants' | 'rating' | 'team' | 'documents' | 'processes' | 'notifications'
 type Competition = {
   id: number; title: string; discipline: string; competition_type: string; age_group: string;
   starts_at: string; location: string; status: string; participants: number
@@ -60,6 +61,7 @@ const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; tag
   { key: 'participants', label: 'Участники', icon: Users },
   { key: 'rating', label: 'Рейтинг', icon: Trophy },
   { key: 'team', label: 'Сборная', icon: Flag },
+  { key: 'processes', label: 'Процессы', icon: ClipboardList },
   { key: 'documents', label: 'Документы', icon: FileText },
   { key: 'notifications', label: 'Уведомления', icon: Bell },
 ]
@@ -67,7 +69,7 @@ const roleDescriptions: Record<Role, string> = {
   Федерация: 'Региональное управление', Тренер: 'Кабинет тренера', Спортсмен: 'Кабинет спортсмена', Судья: 'Судейская коллегия',
 }
 const titles: Record<PageKey, string> = {
-  overview: 'Обзор системы', competitions: 'Соревнования', participants: 'Реестр участников', rating: 'Рейтинг спортсменов', team: 'Сборная области', documents: 'Документы и отчёты', notifications: 'Центр уведомлений',
+  overview: 'Обзор системы', processes: 'Мои процессы', competitions: 'Соревнования', participants: 'Реестр участников', rating: 'Рейтинг спортсменов', team: 'Сборная области', documents: 'Документы и отчёты', notifications: 'Центр уведомлений',
 }
 
 function formatFullDate(raw: string) {
@@ -264,7 +266,7 @@ export default function App() {
   if (authChecking) return <div className="auth-loading"><img className="fsp-logo fsp-logo-loading" src={effectiveTheme === 'light' ? fspLogoDark : fspLogo} alt="ФСП 56 — Оренбургская область" /><p>Проверяем сессию…</p></div>
   if (!user) return <AuthScreen preference={themePreference} effectiveTheme={effectiveTheme} onToggleTheme={toggleTheme} onAuthenticated={(token, signedInUser) => { localStorage.setItem('fsp_token', token); setUser(signedInUser); setRole(roleLabels[signedInUser.active_role] || 'Спортсмен') }} />
 
-  const visibleNav = navItems.filter(item => role === 'Федерация' || role === 'Тренер' || (role === 'Спортсмен' ? item.key !== 'participants' : ['overview', 'competitions', 'documents', 'notifications'].includes(item.key)))
+  const visibleNav = navItems.filter(item => role === 'Федерация' || role === 'Тренер' || (role === 'Спортсмен' ? item.key !== 'participants' : ['overview', 'competitions', 'processes', 'documents', 'notifications'].includes(item.key)))
   const initials = initialsOf(user.full_name)
   const logoSrc = effectiveTheme === 'light' ? fspLogoDark : fspLogo
   const pageTitle = page === 'overview'
@@ -309,6 +311,7 @@ export default function App() {
         {page === 'participants' && <AthletesView items={visibleAthletes} search={search} setSearch={setSearch} canApprove={user.active_role === 'federation'} onApprove={async id => { try { await api(`/api/athletes/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }); setNotice('Профиль спортсмена подтверждён.'); await loadData() } catch (e) { setNotice(e instanceof Error ? e.message : 'Не удалось подтвердить профиль') } }} />}
         {page === 'rating' && <RatingView items={visibleRating} discipline={discipline} setDiscipline={setDiscipline} ageGroup={ageGroup} setAgeGroup={setAgeGroup} search={search} setSearch={setSearch} />}
         {page === 'team' && <TeamView items={team} rating={rating} canEdit={user.active_role === 'federation'} onSave={async ids => { try { const selected = ids.map(id => { const athlete = rating.find(a => a.athlete_id === id); return { athlete_id: id, discipline: athlete?.discipline || '', age_group: athlete?.age_group || '' } }); await api('/api/team', { method: 'POST', body: JSON.stringify({ items: selected }) }); setNotice('Состав сборной сохранён.'); await loadData() } catch (error) { setNotice(error instanceof Error ? error.message : 'Не удалось сохранить состав сборной') } }} />}
+        {page === 'processes' && <ProcessesView api={api} role={user.active_role} competitions={competitions} athletes={athletes} onMessage={setNotice} />}
         {page === 'documents' && <DocumentsView onMessage={setNotice} competitions={competitions} athletes={athletes} user={user} role={user.active_role} />}
         {page === 'notifications' && <NotificationsView items={notices} telegramStatus={telegramStatus} telegramLinkStatus={telegramLinkStatus} telegramLinkCode={telegramLinkCode} telegramLinkBusy={telegramLinkBusy} onGenerateCode={() => void generateTelegramLinkCode()} onUnlink={() => void unlinkTelegram()} />}
       </div>

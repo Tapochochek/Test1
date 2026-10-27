@@ -306,6 +306,12 @@ func seedEnrollment(ctx context.Context, db *sql.DB) error {
 		{2026, "Оренбург", "ОГУ", rules.Disciplines[3], "Мужчины и женщины 21+", 31},
 		{2026, "Орск", "IT-центр Орск", rules.Disciplines[4], "Юноши и девушки 14–17", 19},
 		{2026, "Бузулук", "Авиацентр", rules.Disciplines[5], "Юноши и девушки 14–17", 15},
+		{2024, "Новотроицк", "Школа программирования НИТУ МИСИС", rules.Disciplines[2], "Юноши и девушки 14–17", 8},
+		{2024, "Сорочинск", "Центр цифровых компетенций", rules.Disciplines[3], "Юноши и девушки 14–17", 6},
+		{2025, "Новотроицк", "Школа программирования НИТУ МИСИС", rules.Disciplines[3], "Юноши и девушки 14–17", 11},
+		{2025, "Сорочинск", "Центр цифровых компетенций", rules.Disciplines[4], "Юноши и девушки 14–17", 9},
+		{2026, "Новотроицк", "Школа программирования НИТУ МИСИС", rules.Disciplines[1], "Юниоры и юниорки 18–20", 15},
+		{2026, "Сорочинск", "Центр цифровых компетенций", rules.Disciplines[2], "Юноши и девушки 14–17", 13},
 	}
 	for _, row := range rows {
 		if _, err := db.ExecContext(ctx, `INSERT INTO enrollment_stats(year,municipality,organization,discipline,age_group,athletes_count) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, row...); err != nil {

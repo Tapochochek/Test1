@@ -22,17 +22,19 @@ type Routes struct {
 }
 
 type PlatformRoutes struct {
-	Login, Register, Logout, Me, Switch, CreateCompetition                                                                    http.HandlerFunc
-	Catalogs, PublicHome, Verify                                                                                              http.HandlerFunc
-	Publish, Apply, Applications, DecideApp                                                                                   http.HandlerFunc
-	RequestLink, DecideLink, Links                                                                                            http.HandlerFunc
-	Judges, AssignJudge, Assignments                                                                                          http.HandlerFunc
-	SaveResults, Protocol, History                                                                                            http.HandlerFunc
-	RankApply, RankList, RankDecide                                                                                           http.HandlerFunc
-	CatApply, CatList, CatDecide                                                                                              http.HandlerFunc
-	TeamSave, TeamOrder                                                                                                       http.HandlerFunc
-	Enrollment, AthleteReport, RegistryXLSX, AddType, Development, Audit, Certificate, Inbox, Rating, TeamGet, ApproveAthlete http.HandlerFunc
-	TelegramLinkCode, TelegramLinkStatus, TelegramUnlink                                                                      http.HandlerFunc
+	Login, Register, Logout, Me, Switch, CreateCompetition                                                                                                                                                                                http.HandlerFunc
+	Catalogs, PublicHome, Verify                                                                                                                                                                                                          http.HandlerFunc
+	Publish, Apply, Applications, DecideApp                                                                                                                                                                                               http.HandlerFunc
+	RequestLink, DecideLink, Links                                                                                                                                                                                                        http.HandlerFunc
+	Judges, AssignJudge, Assignments                                                                                                                                                                                                      http.HandlerFunc
+	SaveResults, Protocol, History                                                                                                                                                                                                        http.HandlerFunc
+	RankApply, RankList, RankDecide                                                                                                                                                                                                       http.HandlerFunc
+	CatApply, CatList, CatDecide                                                                                                                                                                                                          http.HandlerFunc
+	TeamSave, TeamOrder                                                                                                                                                                                                                   http.HandlerFunc
+	Enrollment, AthleteReport, RegistryXLSX, AddType, Development, Audit, Certificate, Inbox, Rating, TeamGet, ApproveAthlete                                                                                                             http.HandlerFunc
+	TokenCreate, IntegrationsList, WebhookCreate, ExtCompetitions, ExtRating, ExtImportResults, OIDCDiscovery, OIDCAuthorizePage, OIDCAuthorizeInfo, OIDCApprove, OIDCToken, OIDCUserinfo, OIDCDemoPage, OIDCClientCreate, OIDCClientList http.HandlerFunc
+	Premiums, PremiumStatus, PremiumScale, Norms, SaveNorm, SaveNormResult, Attestation, Promote                                                                                                                                          http.HandlerFunc
+	TelegramLinkCode, TelegramLinkStatus, TelegramUnlink                                                                                                                                                                                  http.HandlerFunc
 }
 
 func NewRouter(routes Routes) http.Handler {
@@ -41,6 +43,14 @@ func NewRouter(routes Routes) http.Handler {
 	register(mux, "GET /api/public/home", routes.Platform.PublicHome)
 	register(mux, "GET /api/public/catalogs", routes.Platform.Catalogs)
 	register(mux, "GET /api/verify/{code}", routes.Platform.Verify)
+	register(mux, "GET /api/oidc/.well-known/openid-configuration", routes.Platform.OIDCDiscovery)
+	register(mux, "GET /api/oidc/authorize", routes.Platform.OIDCAuthorizePage)
+	register(mux, "POST /api/oidc/token", routes.Platform.OIDCToken)
+	register(mux, "GET /api/oidc/userinfo", routes.Platform.OIDCUserinfo)
+	register(mux, "GET /api/oidc/demo", routes.Platform.OIDCDemoPage)
+	register(mux, "GET /api/ext/competitions", routes.Platform.ExtCompetitions)
+	register(mux, "GET /api/ext/rating", routes.Platform.ExtRating)
+	register(mux, "POST /api/ext/competitions/{id}/results", routes.Platform.ExtImportResults)
 	register(mux, "POST /api/auth/login", routes.Platform.Login)
 	register(mux, "POST /api/auth/register", routes.Platform.Register)
 	register(mux, "GET /api/integrations/telegram/status", routes.TelegramStatus)
@@ -81,6 +91,21 @@ func NewRouter(routes Routes) http.Handler {
 		register(mux, "GET /api/coach-links", anyUser(routes.Platform.Links))
 		register(mux, "POST /api/coach-links/{id}/decide", athlete(routes.Platform.DecideLink))
 		register(mux, "GET /api/judges", fed(routes.Platform.Judges))
+		register(mux, "GET /api/oidc/authorize/info", anyUser(routes.Platform.OIDCAuthorizeInfo))
+		register(mux, "POST /api/oidc/authorize/approve", anyUser(routes.Platform.OIDCApprove))
+		register(mux, "POST /api/oidc/clients", fed(routes.Platform.OIDCClientCreate))
+		register(mux, "GET /api/oidc/clients", fed(routes.Platform.OIDCClientList))
+		register(mux, "GET /api/integrations", fed(routes.Platform.IntegrationsList))
+		register(mux, "POST /api/integrations/tokens", fed(routes.Platform.TokenCreate))
+		register(mux, "POST /api/integrations/webhooks", fed(routes.Platform.WebhookCreate))
+		register(mux, "GET /api/premiums", fed(routes.Platform.Premiums))
+		register(mux, "POST /api/premiums/status", fed(routes.Platform.PremiumStatus))
+		register(mux, "POST /api/premiums/scale", fed(routes.Platform.PremiumScale))
+		register(mux, "GET /api/norms", anyUser(routes.Platform.Norms))
+		register(mux, "POST /api/norms", fed(routes.Platform.SaveNorm))
+		register(mux, "POST /api/norm-results", fedCoach(routes.Platform.SaveNormResult))
+		register(mux, "GET /api/attestation", anyUser(routes.Platform.Attestation))
+		register(mux, "POST /api/attestation/{id}/promote", fedCoach(routes.Platform.Promote))
 		register(mux, "POST /api/competitions/{id}/judges", fed(routes.Platform.AssignJudge))
 		register(mux, "GET /api/assignments", fedOrJudge(routes.Platform.Assignments))
 		register(mux, "POST /api/competitions/{id}/results", fedOrJudge(routes.Platform.SaveResults))
