@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent } from 'react'
 import {
-  Activity, ArrowDownRight, ArrowRight, ArrowUpRight, Bell, CalendarDays,
+  Activity, ArrowDownRight, ArrowRight, ArrowUp, ArrowUpRight, Bell, CalendarDays,
   CheckCircle2, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Code2,
   FileBadge, FileText, Filter, Flag, LayoutDashboard, Menu, Plus, Search,
-  Settings2, ShieldCheck, Users, UserRound, Trophy, X, LogOut, Sun, Moon, Monitor, Send,
+  ShieldCheck, Users, UserRound, Trophy, X, LogOut, Sun, Moon, Monitor, Send,
 } from 'lucide-react'
 import fspLogo from './assets/fsp-logo.svg'
 import fspLogoDark from './assets/fsp-logo-dark.svg'
@@ -57,9 +57,9 @@ const fallbackNotices: Notice[] = [
 const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; tag?: string }[] = [
   { key: 'overview', label: 'Главная', icon: LayoutDashboard },
   { key: 'competitions', label: 'Соревнования', icon: CalendarDays },
-  { key: 'participants', label: 'Реестр участников', icon: Users },
+  { key: 'participants', label: 'Участники', icon: Users },
   { key: 'rating', label: 'Рейтинг', icon: Trophy },
-  { key: 'team', label: 'Сборная области', icon: Flag },
+  { key: 'team', label: 'Сборная', icon: Flag },
   { key: 'documents', label: 'Документы', icon: FileText },
   { key: 'notifications', label: 'Уведомления', icon: Bell },
 ]
@@ -75,6 +75,47 @@ function formatFullDate(raw: string) {
   if (Number.isNaN(d.getTime())) return raw
   return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' }).format(d)
 }
+function greeting() {
+  const hour = new Date().getHours()
+  return hour < 5 ? 'Доброй ночи' : hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер'
+}
+function initialsOf(name: string) { return name.split(' ').map(x => x[0]).slice(0, 2).join('') }
+const allDisciplines = ['Программирование алгоритмическое', 'Программирование продуктовое', 'Программирование систем информационной безопасности', 'Программирование систем искусственного интеллекта', 'Программирование робототехники', 'Программирование беспилотных авиационных систем']
+
+/** Число, которое плавно «набегает» от нуля. Уважает prefers-reduced-motion. */
+function CountUp({ value, pad = 0 }: { value: number; pad?: number }) {
+  const [shown, setShown] = useState(0)
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setShown(value); return }
+    let frame = 0
+    const startedAt = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - startedAt) / 1200)
+      setShown(Math.round(value * (1 - Math.pow(1 - t, 3))))
+      if (t < 1) frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [value])
+  return <>{pad ? String(shown).padStart(pad, '0') : shown.toLocaleString('ru-RU')}</>
+}
+
+function RoleSelect({ user, role, onChange, className = '' }: { user: AuthUser; role: Role; onChange: (role: Role) => void; className?: string }) {
+  return <label className={`role-select-wrap ${className}`}><ShieldCheck size={16} /><select aria-label="Активная роль" value={role} onChange={e => onChange(e.target.value as Role)}>{user.roles.map(code => <option key={code} value={roleLabels[code]}>{roleLabels[code]}</option>)}</select><ChevronDown size={14} /></label>
+}
+
+function SiteFooter({ items, onNavigate, logo }: { items: { key: PageKey; label: string }[]; onNavigate: (page: PageKey) => void; logo: string }) {
+  return <footer className="site-footer">
+    <div className="footer-stripe" aria-hidden="true" />
+    <div className="footer-inner">
+      <div className="footer-brand"><img className="fsp-logo fsp-logo-footer" src={logo} alt="ФСП 56 — Оренбургская область" /><p>Региональная платформа Федерации спортивного программирования Оренбургской области: соревнования, заявки, рейтинг и сборная — в одном месте.</p></div>
+      <div className="footer-col"><h4>Разделы</h4>{items.map(item => <button key={item.key} onClick={() => onNavigate(item.key)}>{item.label}</button>)}</div>
+      <div className="footer-col"><h4>На связи</h4><a href="https://t.me/FSP56OrenburgBot" target="_blank" rel="noreferrer">Telegram-бот ФСП 56</a><a href="https://fsp-russia.ru/" target="_blank" rel="noreferrer">Сайт ФСП России</a></div>
+    </div>
+    <div className="footer-bottom"><span>© 2026 ФСП · Оренбургская область</span><span>Сделано на хакатоне ОренКод</span><button className="to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><ArrowUp size={14} /> Наверх</button></div>
+  </footer>
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const token = localStorage.getItem('fsp_token')
   const response = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(init?.headers || {}) } })
@@ -90,7 +131,7 @@ type ThemePreference = 'system' | 'light' | 'dark'
 function ThemeControl({ preference, effectiveTheme, onToggle }: { preference: ThemePreference; effectiveTheme: 'light' | 'dark'; onToggle: () => void }) {
   const Icon = preference === 'system' ? Monitor : effectiveTheme === 'dark' ? Moon : Sun
   const label = preference === 'system' ? `Тема: системная (${effectiveTheme === 'dark' ? 'тёмная' : 'светлая'})` : `Тема: ${effectiveTheme === 'dark' ? 'тёмная' : 'светлая'}`
-  return <button type="button" className="top-icon theme-control" onClick={onToggle} aria-label={`${label}. Нажмите, чтобы изменить`} title={`${label} · переключить тему`}><Icon size={18} /><span className="theme-control-label">{preference === 'system' ? 'Авто' : effectiveTheme === 'dark' ? 'Тёмная' : 'Светлая'}</span></button>
+  return <button type="button" className="top-icon theme-control" onClick={onToggle} aria-label={`${label}. Нажмите, чтобы изменить`} title={`${label} · переключить тему`}><Icon size={19} /><span className="theme-control-label">{preference === 'system' ? 'Авто' : effectiveTheme === 'dark' ? 'Тёмная' : 'Светлая'}</span></button>
 }
 
 export default function App() {
@@ -202,7 +243,7 @@ export default function App() {
   const visibleAthletes = useMemo(() => athletes.filter(a => `${a.full_name} ${a.organization} ${a.discipline} ${a.coach_name}`.toLowerCase().includes(search.toLowerCase())), [athletes, search])
   const visibleRating = useMemo(() => rating.filter(a => (discipline === 'Все дисциплины' || a.discipline === discipline) && (ageGroup === 'Все группы' || a.age_group === ageGroup) && `${a.athlete} ${a.organization} ${a.discipline}`.toLowerCase().includes(search.toLowerCase())).map((a, i) => ({ ...a, rank: i + 1 })), [rating, discipline, ageGroup, search])
 
-  function openPage(next: PageKey) { setPage(next); setSearch(''); setSidebarOpen(false) }
+  function openPage(next: PageKey) { setPage(next); setSearch(''); setSidebarOpen(false); window.scrollTo({ top: 0 }) }
   async function changeRole(nextRole: Role) {
     try { const updated = await api<AuthUser>('/api/auth/switch-role', { method: 'POST', body: JSON.stringify({ role: roleCodes[nextRole] }) }); setUser(updated); setRole(nextRole); setNotice(`Переключено на роль «${nextRole}»`); openPage('overview') }
     catch (error) { setNotice(error instanceof Error ? error.message : 'Не удалось сменить роль') }
@@ -223,44 +264,44 @@ export default function App() {
   if (authChecking) return <div className="auth-loading"><img className="fsp-logo fsp-logo-loading" src={effectiveTheme === 'light' ? fspLogoDark : fspLogo} alt="ФСП 56 — Оренбургская область" /><p>Проверяем сессию…</p></div>
   if (!user) return <AuthScreen preference={themePreference} effectiveTheme={effectiveTheme} onToggleTheme={toggleTheme} onAuthenticated={(token, signedInUser) => { localStorage.setItem('fsp_token', token); setUser(signedInUser); setRole(roleLabels[signedInUser.active_role] || 'Спортсмен') }} />
 
-  return <div className="app-shell">
-    <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
-      <div className="brand-lockup">
-        <img className="fsp-logo fsp-logo-sidebar" src={effectiveTheme === 'light' ? fspLogoDark : fspLogo} alt="ФСП 56 — Оренбургская область" />
-        <button className="icon-button sidebar-close" onClick={() => setSidebarOpen(false)} aria-label="Закрыть меню"><X size={18} /></button>
-      </div>
-      <div className="season-chip"><span className="pulse-dot" /> СЕЗОН 2026 / 27</div>
-      <p className="nav-caption">РАБОЧЕЕ ПРОСТРАНСТВО</p>
-      <nav className="main-nav">
-        {navItems.filter(item => role === 'Федерация' || role === 'Тренер' || (role === 'Спортсмен' ? item.key !== 'participants' : ['overview', 'competitions', 'documents', 'notifications'].includes(item.key))).map(item => <button key={item.key} onClick={() => openPage(item.key)} className={`nav-item ${page === item.key ? 'active' : ''}`}>
-          <item.icon size={18} strokeWidth={1.9} /><span>{item.label}</span>{item.tag && <em>{item.tag}</em>}
-        </button>)}
-      </nav>
-      <div className="sidebar-bottom">
-        <div className="sidebar-help"><div className="help-icon"><CircleHelp size={18} /></div><div><b>Нужна помощь?</b><small>База знаний платформы</small></div><ChevronRight size={15} /></div>
-        <button className="nav-item settings-item" onClick={() => setNotice('Настройки появятся в следующем срезе прототипа.')}><Settings2 size={18} /><span>Настройки системы</span></button>
-        <div className="profile-card"><div className="avatar avatar-violet">{user.full_name.split(' ').map(x => x[0]).slice(0, 2).join('')}</div><div className="profile-copy"><b>{user.full_name}</b><small>{roleLabels[user.active_role]} · {user.organization || user.municipality}</small></div><button className="profile-logout" onClick={() => void logout()} aria-label="Выйти" title="Выйти"><LogOut size={15} /></button></div>
-      </div>
-    </aside>
+  const visibleNav = navItems.filter(item => role === 'Федерация' || role === 'Тренер' || (role === 'Спортсмен' ? item.key !== 'participants' : ['overview', 'competitions', 'documents', 'notifications'].includes(item.key)))
+  const initials = initialsOf(user.full_name)
+  const logoSrc = effectiveTheme === 'light' ? fspLogoDark : fspLogo
+  const pageTitle = page === 'overview'
+    ? (user.active_role === 'federation' ? 'Управление спортивным программированием' : user.active_role === 'coach' ? 'Кабинет тренера' : user.active_role === 'athlete' ? 'Кабинет спортсмена' : 'Рабочее место судьи')
+    : titles[page]
 
-    {sidebarOpen && <button className="mobile-overlay" aria-label="Закрыть меню" onClick={() => setSidebarOpen(false)} />}
+  return <div className="app-shell">
+    <header className="site-header">
+      <div className="header-inner">
+        <button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Открыть меню"><Menu size={22} /></button>
+        <button className="brand-lockup" onClick={() => openPage('overview')} aria-label="ФСП 56 — на главную"><img className="fsp-logo fsp-logo-header" src={logoSrc} alt="ФСП 56 — Оренбургская область" /></button>
+        <nav className="top-nav" aria-label="Основные разделы">{visibleNav.map(item => <button key={item.key} onClick={() => openPage(item.key)} className={`nav-item ${page === item.key ? 'active' : ''}`} aria-current={page === item.key ? 'page' : undefined}><span>{item.label}</span></button>)}</nav>
+        <div className="header-actions">
+          <ThemeControl preference={themePreference} effectiveTheme={effectiveTheme} onToggle={toggleTheme} />
+          <button className="top-icon notification-top" aria-label="Уведомления" onClick={() => openPage('notifications')}><Bell size={19} /><i /></button>
+          <RoleSelect className="header-role" user={user} role={role} onChange={next => void changeRole(next)} />
+          <div className="header-profile" title={`${user.full_name} · ${roleLabels[user.active_role]}`}><div className="avatar">{initials}</div><button className="profile-logout" onClick={() => void logout()} aria-label="Выйти" title="Выйти"><LogOut size={17} /></button></div>
+        </div>
+      </div>
+    </header>
+
+    <div className={`drawer-layer ${sidebarOpen ? 'open' : ''}`} inert={!sidebarOpen}>
+      <button className="mobile-overlay" aria-label="Закрыть меню" onClick={() => setSidebarOpen(false)} />
+      <aside className="drawer">
+        <div className="drawer-head"><img className="fsp-logo fsp-logo-drawer" src={logoSrc} alt="ФСП 56 — Оренбургская область" /><button className="icon-button" onClick={() => setSidebarOpen(false)} aria-label="Закрыть меню"><X size={20} /></button></div>
+        <div className="season-chip"><span className="pulse-dot" /> СЕЗОН 2026 / 27</div>
+        <nav className="drawer-nav">{visibleNav.map(item => <button key={item.key} onClick={() => openPage(item.key)} className={`nav-item ${page === item.key ? 'active' : ''}`}><item.icon size={18} strokeWidth={1.9} /><span>{item.label}</span></button>)}</nav>
+        <RoleSelect className="drawer-role" user={user} role={role} onChange={next => void changeRole(next)} />
+        <div className="drawer-profile"><div className="avatar">{initials}</div><div className="profile-copy"><b>{user.full_name}</b><small>{roleLabels[user.active_role]} · {user.organization || user.municipality}</small></div><button className="profile-logout" onClick={() => void logout()} aria-label="Выйти" title="Выйти"><LogOut size={17} /></button></div>
+      </aside>
+    </div>
 
     <main className="main-area">
-      <header className="topbar">
-        <div className="topbar-left"><button className="icon-button mobile-menu" onClick={() => setSidebarOpen(true)} aria-label="Открыть меню"><Menu size={20} /></button><div className="breadcrumb">Платформа <ChevronRight size={14} /><b>{titles[page]}</b></div></div>
-        <div className="topbar-right">
-          <ThemeControl preference={themePreference} effectiveTheme={effectiveTheme} onToggle={toggleTheme} />
-          <div className="environment"><span /> DEMO-СРЕДА</div>
-          <button className="top-icon" aria-label="Поиск" onClick={() => document.getElementById('global-search')?.focus()}><Search size={18} /></button>
-          <button className="top-icon notification-top" aria-label="Уведомления" onClick={() => openPage('notifications')}><Bell size={18} /><i /></button>
-          <div className="role-select-wrap"><ShieldCheck size={16} /><select aria-label="Активная роль" value={role} onChange={e => void changeRole(e.target.value as Role)}>{user.roles.map(code => <option key={code} value={roleLabels[code]}>{roleLabels[code]}</option>)}</select><ChevronDown size={14} /></div>
-        </div>
-      </header>
-
-      <div className="page-content">
-        <section className={`welcome-row ${page === 'overview' ? 'welcome-row-home' : ''}`}>
-          <div><div className="eyebrow"><span className="eyebrow-line" /> ЕДИНАЯ ЦИФРОВАЯ СРЕДА ФСП</div><h1>{page === 'overview' ? (user.active_role === 'federation' ? 'Управление спортивным программированием' : user.active_role === 'coach' ? 'Кабинет тренера' : user.active_role === 'athlete' ? 'Кабинет спортсмена' : 'Рабочее место судьи') : titles[page]}</h1><p>{page === 'overview' ? `${roleDescriptions[role]} · Оренбургская область` : `${roleDescriptions[role]} · Оренбургская область`}</p></div>
-          <div className="welcome-actions"><div className="last-updated"><span className={`refresh-dot ${loading ? 'loading' : ''}`} />{loading ? 'Обновление…' : dataSource === 'api' ? 'Данные загружены из API' : 'Демонстрационные данные'}</div>{user.active_role === 'federation' && (page === 'overview' || page === 'competitions') && <button className="button button-primary" onClick={() => setModalOpen(true)}><Plus size={17} /> Создать соревнование</button>}</div>
+      <div className="page-content" key={page}>
+        <section className="welcome-row">
+          <div><div className="eyebrow"><span className="eyebrow-line" /> ФСП · ОРЕНБУРГСКАЯ ОБЛАСТЬ</div><h1>{page === 'overview' ? `${greeting()}!` : titles[page]}</h1><p>{page === 'overview' ? `${pageTitle} · ${roleDescriptions[role]}` : `${roleDescriptions[role]} · Оренбургская область`}</p></div>
+          <div className="welcome-actions"><div className="last-updated"><span className={`refresh-dot ${loading ? 'loading' : ''}`} />{loading ? 'Обновляем данные…' : dataSource === 'api' ? 'Данные актуальны' : 'Показаны примеры данных'}</div>{user.active_role === 'federation' && (page === 'overview' || page === 'competitions') && <button className="button button-primary" onClick={() => setModalOpen(true)}><Plus size={17} /> Создать соревнование</button>}</div>
         </section>
 
         {page === 'overview' && <Dashboard dashboard={dashboard} competitions={competitions} rating={rating} notices={notices} telegramStatus={telegramStatus} onNavigate={openPage} role={user.active_role} />}
@@ -270,13 +311,13 @@ export default function App() {
         {page === 'team' && <TeamView items={team} rating={rating} canEdit={user.active_role === 'federation'} onSave={async ids => { try { const selected = ids.map(id => { const athlete = rating.find(a => a.athlete_id === id); return { athlete_id: id, discipline: athlete?.discipline || '', age_group: athlete?.age_group || '' } }); await api('/api/team', { method: 'POST', body: JSON.stringify({ items: selected }) }); setNotice('Состав сборной сохранён.'); await loadData() } catch (error) { setNotice(error instanceof Error ? error.message : 'Не удалось сохранить состав сборной') } }} />}
         {page === 'documents' && <DocumentsView onMessage={setNotice} competitions={competitions} athletes={athletes} user={user} role={user.active_role} />}
         {page === 'notifications' && <NotificationsView items={notices} telegramStatus={telegramStatus} telegramLinkStatus={telegramLinkStatus} telegramLinkCode={telegramLinkCode} telegramLinkBusy={telegramLinkBusy} onGenerateCode={() => void generateTelegramLinkCode()} onUnlink={() => void unlinkTelegram()} />}
-
-        <footer className="footer"><div><span className="footer-mark"><Code2 size={14} /></span> ФСП · ОРЕНБУРГСКАЯ ОБЛАСТЬ</div><span>Прототип для ОренКод 2026 <b>·</b> v0.1</span></footer>
       </div>
     </main>
 
+    <SiteFooter items={visibleNav} onNavigate={openPage} logo={fspLogo} />
+
     {modalOpen && user.active_role === 'federation' && <CreateCompetitionModal onClose={() => setModalOpen(false)} onCreated={async () => { setModalOpen(false); setNotice('Соревнование сохранено в базе данных.'); await loadData() }} onError={setNotice} />}
-    {notice && <div className="toast"><CheckCircle2 size={18} /><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Закрыть уведомление"><X size={15} /></button></div>}
+    {notice && <div className="toast" role="status"><CheckCircle2 size={18} /><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Закрыть уведомление"><X size={15} /></button></div>}
   </div>
 }
 
@@ -298,11 +339,11 @@ function AuthScreen({ onAuthenticated, preference, effectiveTheme, onToggleTheme
     } catch (e) { setError(e instanceof Error ? e.message : 'Не удалось выполнить запрос') }
     finally { setBusy(false) }
   }
-  return <div className="auth-screen"><div className="auth-backdrop-grid" /><div className="auth-theme-control"><ThemeControl preference={preference} effectiveTheme={effectiveTheme} onToggle={onToggleTheme} /></div><section className="auth-card"><div className="auth-brand"><img className="fsp-logo fsp-logo-auth" src={effectiveTheme === 'light' ? fspLogoDark : fspLogo} alt="ФСП 56 — Оренбургская область" /></div><div className="auth-kicker"><ShieldCheck size={14} /> ЕДИНАЯ ЦИФРОВАЯ ПЛАТФОРМА</div><h1>{mode === 'login' ? 'С возвращением' : 'Создать аккаунт'}</h1><p className="auth-intro">{mode === 'login' ? 'Войдите, чтобы управлять соревнованиями, заявками и спортивной историей.' : 'Создайте личный кабинет. Права Федерации назначаются администратором отдельно.'}</p><div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError('') }}>Вход</button><button className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setError('') }}>Регистрация</button></div><form onSubmit={submit}>
+  return <div className="auth-screen"><div className="auth-backdrop-grid" /><div className="auth-theme-control"><ThemeControl preference={preference} effectiveTheme={effectiveTheme} onToggle={onToggleTheme} /></div><section className="auth-card"><div className="auth-brand"><img className="fsp-logo fsp-logo-auth" src={effectiveTheme === 'light' ? fspLogoDark : fspLogo} alt="ФСП 56 — Оренбургская область" /></div><div className="auth-kicker"><ShieldCheck size={14} /> ПЛАТФОРМА ФСП 56</div><h1>{mode === 'login' ? 'С возвращением!' : 'Создайте аккаунт'}</h1><p className="auth-intro">{mode === 'login' ? 'Войдите, чтобы подать заявку, посмотреть результаты или управлять соревнованиями.' : 'Это займёт пару минут. Права Федерации назначает администратор отдельно.'}</p><div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError('') }}>Вход</button><button className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setError('') }}>Регистрация</button></div><form onSubmit={submit}>
     {mode === 'register' && <><label className="auth-label">ФИО<input required autoComplete="name" value={form.full_name} onChange={e => update('full_name', e.target.value)} placeholder="Иван Иванов" /></label><label className="auth-label">Роль в системе<select value={form.role} onChange={e => update('role', e.target.value as RoleCode)}><option value="athlete">Спортсмен</option><option value="coach">Тренер</option><option value="judge">Судья</option></select></label></>}
     <label className="auth-label">Email<input type="email" required autoComplete="email" value={form.email} onChange={e => update('email', e.target.value)} placeholder="you@example.ru" /></label><label className="auth-label">Пароль<input type="password" required minLength={mode === 'register' ? 8 : undefined} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={form.password} onChange={e => update('password', e.target.value)} placeholder={mode === 'login' ? 'Ваш пароль' : 'Минимум 8 символов'} /></label>
     {mode === 'register' && <><div className="auth-form-row"><label className="auth-label">Муниципалитет<input required value={form.municipality} onChange={e => update('municipality', e.target.value)} /></label><label className="auth-label">Организация<input required value={form.organization} onChange={e => update('organization', e.target.value)} placeholder="Школа / вуз / клуб" /></label></div><label className="auth-label">Телефон <span>(необязательно)</span><input type="tel" value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="+7 ..." /></label>{form.role === 'athlete' && <><div className="auth-form-row"><label className="auth-label">Дата рождения<input required type="date" value={form.birth_date} onChange={e => update('birth_date', e.target.value)} /></label><label className="auth-label">Возрастная группа<select value={form.age_group} onChange={e => update('age_group', e.target.value)}><option>Юноши и девушки 14–17</option><option>Юниоры и юниорки 18–20</option><option>Мужчины и женщины 21+</option></select></label></div><label className="auth-label">Дисциплина<select value={form.discipline} onChange={e => update('discipline', e.target.value)}>{['Программирование алгоритмическое', 'Программирование продуктовое', 'Программирование систем информационной безопасности', 'Программирование систем искусственного интеллекта', 'Программирование робототехники', 'Программирование беспилотных авиационных систем'].map(d => <option key={d}>{d}</option>)}</select></label>{athleteAge < 18 && <><label className="auth-label">ФИО законного представителя<input required value={form.guardian_name} onChange={e => update('guardian_name', e.target.value)} placeholder="ФИО родителя / опекуна" /></label><label className="auth-consent"><input type="checkbox" checked={form.guardian_consent} onChange={e => update('guardian_consent', e.target.checked)} required /><span>Законный представитель согласен на обработку данных несовершеннолетнего.</span></label></>}</> }<label className="auth-consent"><input type="checkbox" checked={form.consent_personal} onChange={e => update('consent_personal', e.target.checked)} required /><span>Согласен(на) на обработку персональных данных для работы платформы.</span></label></>}
-    {error && <div className="auth-error" role="alert">{error}</div>}<button className="auth-submit" disabled={busy}>{busy ? 'Подождите…' : mode === 'login' ? 'Войти в платформу' : 'Создать аккаунт'}<ArrowRight size={16} /></button></form>{mode === 'login' && <div className="auth-demo"><b>Демо-доступы</b><span>Федерация: federation@fsp56.ru</span><span>Спортсмен: morozov@fsp56.ru</span><small>Пароль для всех демонстрационных аккаунтов: <b>demo</b></small></div>}<div className="auth-foot"><ShieldCheck size={13} /> Защищённая сессия · разграничение прав по ролям</div></section><div className="auth-side-note"><span>ФСП / 56</span><h2>Спортивное<br/>программирование<br/>региона — в одной системе.</h2><p>Соревнования · заявки · результаты · рейтинг · спортивная история</p></div></div>
+    {error && <div className="auth-error" role="alert">{error}</div>}<button className="auth-submit" disabled={busy}>{busy ? 'Подождите…' : mode === 'login' ? 'Войти в платформу' : 'Создать аккаунт'}<ArrowRight size={16} /></button></form>{mode === 'login' && <div className="auth-demo"><b>Попробовать без регистрации</b><div className="demo-buttons"><button type="button" className="demo-fill" onClick={() => { update('email', 'federation@fsp56.ru'); update('password', 'demo') }}>Войти как Федерация</button><button type="button" className="demo-fill" onClick={() => { update('email', 'morozov@fsp56.ru'); update('password', 'demo') }}>Войти как спортсмен</button></div><small>Кнопки подставляют демо-аккаунт, пароль для всех: <b>demo</b></small></div>}<div className="auth-foot"><ShieldCheck size={13} /> Защищённая сессия · разграничение прав по ролям</div></section><div className="auth-side-note"><div className="auth-shapes" aria-hidden="true"><i /><i /><i /></div><span>ФСП / 56</span><h2>Спортивное<br/>программирование<br/>региона — в одной системе.</h2><p>Подавайте заявки, следите за результатами и растите в рейтинге Оренбургской области.</p><div className="auth-tags"><span>Соревнования</span><span>Заявки</span><span>Рейтинг</span><span>Сборная</span></div></div></div>
 }
 
 function Dashboard({ dashboard, competitions, rating, notices, telegramStatus, onNavigate, role }: { dashboard: DashboardData; competitions: Competition[]; rating: RatingEntry[]; notices: Notice[]; telegramStatus: TelegramStatus; onNavigate: (page: PageKey) => void; role: RoleCode }) {
@@ -329,36 +370,62 @@ function Dashboard({ dashboard, competitions, rating, notices, telegramStatus, o
   }, [])
 
   const stats = [
-    { label: 'Спортсмены в реестре', value: dashboard.stats.athletes.toLocaleString('ru-RU'), change: 'Реестр', icon: Users, cls: 'stat-indigo', foot: 'учётные записи спортсменов', up: true },
-    { label: 'Активные соревнования', value: String(dashboard.stats.competitions).padStart(2, '0'), change: 'Календарь', icon: CalendarDays, cls: 'stat-mint', foot: 'соревнования платформы', up: true },
-    { label: 'Заявки участников', value: dashboard.stats.applications.toLocaleString('ru-RU'), change: 'Заявки', icon: ClipboardList, cls: 'stat-orange', foot: 'всего в системе', up: false },
-    { label: 'Судьи в системе', value: String(dashboard.stats.judges).padStart(2, '0'), change: 'Реестр', icon: ShieldCheck, cls: 'stat-blue', foot: 'учётные записи судей', up: false },
+    { label: 'Спортсменов в реестре', tag: 'Реестр', value: dashboard.stats.athletes, pad: 0, icon: Users, cls: 'stat-indigo', foot: 'учётные записи спортсменов' },
+    { label: 'Соревнований в календаре', tag: 'Календарь', value: dashboard.stats.competitions, pad: 2, icon: CalendarDays, cls: 'stat-mint', foot: 'события платформы' },
+    { label: 'Заявок от участников', tag: 'Заявки', value: dashboard.stats.applications, pad: 0, icon: ClipboardList, cls: 'stat-orange', foot: 'поступило за всё время' },
+    { label: 'Судей в системе', tag: 'Судьи', value: dashboard.stats.judges, pad: 2, icon: ShieldCheck, cls: 'stat-blue', foot: 'учётные записи судей' },
   ]
+  const heroLabel = role === 'federation' ? 'ФСП · ОРЕНБУРГСКАЯ ОБЛАСТЬ' : role === 'coach' ? 'ЛИЧНЫЙ КАБИНЕТ ТРЕНЕРА' : role === 'athlete' ? 'ЛИЧНЫЙ КАБИНЕТ СПОРТСМЕНА' : 'СУДЕЙСКАЯ КОЛЛЕГИЯ'
+  const topPoints = rating[0]?.points || 1
+  const delay = (i: number) => ({ '--i': i }) as CSSProperties
   return <div className="dashboard-experience">
-    <section className="hero-banner editorial-hero" data-reveal="hero">
+    <section className="hero-banner">
       <div className="hero-grid" aria-hidden="true" />
-      <div className="hero-copy"><div className="hero-label"><span className="hero-label-mark" /> {role === 'federation' ? 'ФСП · ОРЕНБУРГСКАЯ ОБЛАСТЬ' : role === 'coach' ? 'ЛИЧНЫЙ КАБИНЕТ ТРЕНЕРА' : role === 'athlete' ? 'ЛИЧНЫЙ КАБИНЕТ СПОРТСМЕНА' : 'СУДЕЙСКАЯ КОЛЛЕГИЯ'}</div><h2>Спорт начинается<br /><span>с возможностей.</span></h2><p>Соревнования, люди и результаты регионального спортивного программирования — в одном понятном рабочем пространстве.</p><button onClick={() => onNavigate('competitions')} className="hero-cta">Открыть календарь <ArrowRight size={16} /></button></div>
-      <div className="hero-visual" aria-hidden="true"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="orbit orbit-three" /><div className="hero-core"><Code2 size={37} /></div><div className="hero-node node-one" /><div className="hero-node node-two" /><div className="hero-node node-three" /><div className="hero-scanline" /></div>
-      <div className="hero-index"><span>ЕДИНАЯ СРЕДА</span><b>56</b><small>СЕЗОН 2026 / 27</small></div>
-      <div className="hero-bottom-note"><span /> РЕГИОНАЛЬНАЯ ПЛАТФОРМА · СПОРТИВНОЕ ПРОГРАММИРОВАНИЕ</div>
+      <div className="hero-copy">
+        <div className="hero-label"><span className="hero-label-mark" /> {heroLabel}</div>
+        <h2>Спорт начинается<br /><span>с возможностей</span></h2>
+        <p>Соревнования, люди и результаты регионального спортивного программирования — в одном понятном месте. Выбирайте старт, подавайте заявку и следите за своим местом в рейтинге.</p>
+        <div className="hero-buttons">
+          <button onClick={() => onNavigate('competitions')} className="hero-cta">Открыть календарь <ArrowRight size={17} /></button>
+          {role !== 'judge' && <button onClick={() => onNavigate('rating')} className="hero-cta hero-cta-ghost">Смотреть рейтинг</button>}
+        </div>
+      </div>
+      <div className="hero-visual" aria-hidden="true">
+        <span className="hero-number">56</span>
+        <span className="hero-block block-red" />
+        <span className="hero-block block-white" />
+        <div className="hero-terminal">
+          <div className="hero-terminal-dots"><i /><i /><i /></div>
+          <div><em>$</em> сезон <b>2026/27</b></div>
+          <div><em>&gt;</em> спортсменов: <b>{dashboard.stats.athletes}</b></div>
+          <div><em>&gt;</em> заявок: <b>{dashboard.stats.applications}</b></div>
+        </div>
+      </div>
     </section>
 
-    <div className="section-heading" data-reveal="heading"><div><h2>В цифрах</h2><p>Текущие данные платформы</p></div><button className="text-button" onClick={() => onNavigate('participants')}>Открыть реестр <ArrowRight size={15} /></button></div>
+    <div className="marquee" aria-label="Дисциплины спортивного программирования">
+      <div className="marquee-track" aria-hidden="true">{[...allDisciplines, ...allDisciplines, ...allDisciplines, ...allDisciplines].map((d, i) => <span className="marquee-item" key={i}>{d}</span>)}</div>
+    </div>
+
+    <div className="section-heading" data-reveal="heading"><div><h2>Платформа в цифрах</h2><p>Актуальные данные региона</p></div><button className="text-button" onClick={() => onNavigate('participants')}>Открыть реестр <ArrowRight size={15} /></button></div>
     <section className="stats-grid">
-      {stats.map((s, i) => <div className="stat-card" data-reveal="stat" key={s.label}><div className={`stat-icon ${s.cls}`}><s.icon size={19} /></div><div className="stat-meta"><span>{s.label}</span><b>{s.value}</b><div className={`stat-foot ${s.up ? 'positive' : 'attention'}`}>{s.up ? <ArrowUpRight size={14} /> : <Activity size={13} />}<strong>{s.change}</strong><span>{s.foot}</span></div></div><div className={`stat-watermark wm-${i}`}><s.icon size={52} /></div></div>)}
+      {stats.map((s, i) => <div className="stat-card" data-reveal="stat" style={delay(i)} key={s.label}>
+        <div className="stat-card-top"><div className={`stat-icon ${s.cls}`}><s.icon size={21} /></div><span className="stat-tag">{s.tag}</span></div>
+        <div className="stat-meta"><b><CountUp value={s.value} pad={s.pad} /></b><span>{s.label}</span><small>{s.foot}</small></div>
+      </div>)}
     </section>
 
     <section className="content-grid main-dashboard-grid">
-      <div className="panel competition-panel" data-reveal="calendar"><div className="panel-heading"><div><div className="panel-kicker">КАЛЕНДАРЬ</div><h3>Ближайшие соревнования</h3></div><button className="panel-action" onClick={() => onNavigate('competitions')}>Все события <ArrowRight size={14} /></button></div>
-        <div className="event-list">{competitions.slice(0, 3).map(c => <div className="event-row" key={c.id}><div className="event-date"><b>{new Date(c.starts_at).toLocaleDateString('ru-RU', { day: '2-digit' })}</b><span>{new Date(c.starts_at).toLocaleDateString('ru-RU', { month: 'short' }).replace('.', '')}</span></div><div className="event-copy"><b>{c.title}</b><span><Code2 size={12} /> {c.discipline} <i /> {c.location}</span></div><div className={`status-pill ${c.status === 'Регистрация' ? 'status-open' : c.status === 'Завершено' ? 'status-done' : 'status-planned'}`}>{c.status}</div><button className="row-arrow" aria-label={`Открыть ${c.title}`} onClick={() => onNavigate('competitions')}><ChevronRight size={17} /></button></div>)}</div>
-        <button className="panel-bottom-link" onClick={() => onNavigate('competitions')}><CalendarDays size={15} /> Перейти в календарь <ArrowRight size={14} /></button>
+      <div className="panel competition-panel" data-reveal="calendar"><div className="panel-heading"><div><div className="panel-kicker">Календарь</div><h3>Ближайшие соревнования</h3></div><button className="panel-action" onClick={() => onNavigate('competitions')}>Все события <ArrowRight size={14} /></button></div>
+        <div className="event-list">{competitions.slice(0, 3).map(c => <div className="event-row" key={c.id}><div className="event-date"><b>{new Date(c.starts_at).toLocaleDateString('ru-RU', { day: '2-digit' })}</b><span>{new Date(c.starts_at).toLocaleDateString('ru-RU', { month: 'short' }).replace('.', '')}</span></div><div className="event-copy"><b>{c.title}</b><span><Code2 size={13} /> {c.discipline} <i /> {c.location}</span></div><div className={`status-pill ${c.status === 'Регистрация' ? 'status-open' : c.status === 'Завершено' ? 'status-done' : 'status-planned'}`}>{c.status}</div><button className="row-arrow" aria-label={`Открыть ${c.title}`} onClick={() => onNavigate('competitions')}><ChevronRight size={18} /></button></div>)}</div>
+        <button className="panel-bottom-link" onClick={() => onNavigate('competitions')}><CalendarDays size={16} /> Перейти в календарь <ArrowRight size={15} /></button>
       </div>
-      <div className="panel rating-panel" data-reveal="rating"><div className="panel-heading"><div><div className="panel-kicker">ТОП РЕЙТИНГА</div><h3>Топ рейтинга региона</h3></div><button className="round-action" onClick={() => onNavigate('rating')} aria-label="Открыть рейтинг"><ArrowUpRight size={17} /></button></div><div className="rating-list">{rating.slice(0, 5).map((a, i) => <div className="rating-row" key={a.athlete}><div className={`rank-num ${i === 0 ? 'rank-gold' : i === 1 ? 'rank-silver' : i === 2 ? 'rank-bronze' : ''}`}>{String(i + 1).padStart(2, '0')}</div><div className={`athlete-avatar avatar-${i % 4}`}>{a.athlete.split(' ').map(x => x[0]).slice(0, 2).join('')}</div><div className="rating-athlete"><b>{a.athlete}</b><span>{a.organization}</span></div><div className="rating-points"><b>{a.points}</b><span>очков</span></div></div>)}</div><button className="panel-bottom-link" onClick={() => onNavigate('rating')}><Trophy size={15} /> Полный рейтинг <ArrowRight size={14} /></button></div>
+      <div className="panel rating-panel" data-reveal="rating" style={delay(1)}><div className="panel-heading"><div><div className="panel-kicker">Лидеры</div><h3>Топ рейтинга региона</h3></div><button className="round-action" onClick={() => onNavigate('rating')} aria-label="Открыть рейтинг"><ArrowUpRight size={18} /></button></div><div className="rating-list">{rating.slice(0, 5).map((a, i) => <div className="rating-row" key={a.athlete}><div className={`rank-num ${i === 0 ? 'rank-gold' : i === 1 ? 'rank-silver' : i === 2 ? 'rank-bronze' : ''}`}>{String(i + 1).padStart(2, '0')}</div><div className={`athlete-avatar avatar-${i % 4}`}>{initialsOf(a.athlete)}</div><div className="rating-athlete"><b>{a.athlete}</b><span>{a.organization}</span></div><div className="rating-points"><b>{a.points}</b><span>очков</span></div><i className="rating-bar" style={{ '--w': `${Math.round(a.points / topPoints * 100)}%` } as CSSProperties} /></div>)}</div><button className="panel-bottom-link" onClick={() => onNavigate('rating')}><Trophy size={16} /> Полный рейтинг <ArrowRight size={15} /></button></div>
     </section>
 
-    <section className="content-grid lower-grid"><div className="panel workflow-panel" data-reveal="workflow"><div className="panel-heading"><div><div className="panel-kicker">ТРЕБУЮТ ВНИМАНИЯ</div><h3>Рабочие задачи</h3></div><span className="count-badge">03</span></div><div className="workflow-item"><div className="workflow-icon workflow-yellow"><ClipboardList size={17} /></div><div><b>Модерация заявок</b><span>12 заявок ждут решения Федерации</span></div><button onClick={() => onNavigate('competitions')} aria-label="Проверить заявки"><ArrowRight size={15} /></button></div><div className="workflow-item"><div className="workflow-icon workflow-red"><ShieldCheck size={17} /></div><div><b>Срок действия категорий</b><span>3 судейские категории требуют проверки</span></div><button onClick={() => onNavigate('participants')} aria-label="Проверить категории"><ArrowRight size={15} /></button></div><div className="workflow-item"><div className="workflow-icon workflow-green"><FileBadge size={17} /></div><div><b>Протокол к публикации</b><span>Один документ готов к согласованию</span></div><button onClick={() => onNavigate('documents')} aria-label="Открыть документы"><ArrowRight size={15} /></button></div></div>
-      <div className="panel notices-panel" data-reveal="notices"><div className="panel-heading"><div><div className="panel-kicker">СИСТЕМА</div><h3>Последние уведомления</h3></div><button className="panel-action" onClick={() => onNavigate('notifications')}>Все <ArrowRight size={14} /></button></div><div className="notice-list">{notices.slice(0, 3).map(n => <div className="notice-row" key={n.id}><div className={`notice-mark notice-${n.kind}`}>{n.kind === 'warning' ? <Activity size={15} /> : n.kind === 'success' ? <CheckCircle2 size={15} /> : <Bell size={15} />}</div><div><b>{n.title}</b><p>{n.message}</p><small>{n.when}</small></div></div>)}</div></div></section>
-    <section className="telegram-integration-card" data-reveal="integration"><div className="telegram-brand-block"><span className="telegram-logo"><Send size={17} /></span><div><span className="panel-kicker">ВНЕШНИЕ ИНТЕГРАЦИИ</span><h3>Оповещения в Telegram</h3><p>Решения по заявкам, обновления соревнований и публикация результатов — прямо в мессенджере.</p></div></div><div className="telegram-status-block"><span className={`telegram-connection ${telegramStatus.configured && telegramStatus.polling_enabled ? 'telegram-connected' : ''}`}><span />{telegramStatus.configured && telegramStatus.polling_enabled ? 'Бот настроен' : telegramStatus.configured ? 'Нет связи — проверьте логи' : 'Ожидает подключения'}</span><div className="telegram-meta"><span><CheckCircle2 size={13} /> Long polling</span><span><ShieldCheck size={13} /> Команды через polling</span></div><button className="button button-light" onClick={() => onNavigate('documents')}>Как подключить <ArrowRight size={14} /></button></div></section>
+    <section className="content-grid lower-grid"><div className="panel workflow-panel" data-reveal="workflow"><div className="panel-heading"><div><div className="panel-kicker">Требуют внимания</div><h3>Рабочие задачи</h3></div><span className="count-badge">03</span></div><div className="workflow-item"><div className="workflow-icon workflow-yellow"><ClipboardList size={18} /></div><div><b>Модерация заявок</b><span>12 заявок ждут решения Федерации</span></div><button onClick={() => onNavigate('competitions')} aria-label="Проверить заявки"><ArrowRight size={16} /></button></div><div className="workflow-item"><div className="workflow-icon workflow-red"><ShieldCheck size={18} /></div><div><b>Срок действия категорий</b><span>3 судейские категории требуют проверки</span></div><button onClick={() => onNavigate('participants')} aria-label="Проверить категории"><ArrowRight size={16} /></button></div><div className="workflow-item"><div className="workflow-icon workflow-green"><FileBadge size={18} /></div><div><b>Протокол к публикации</b><span>Один документ готов к согласованию</span></div><button onClick={() => onNavigate('documents')} aria-label="Открыть документы"><ArrowRight size={16} /></button></div></div>
+      <div className="panel notices-panel" data-reveal="notices" style={delay(1)}><div className="panel-heading"><div><div className="panel-kicker">Система</div><h3>Последние уведомления</h3></div><button className="panel-action" onClick={() => onNavigate('notifications')}>Все <ArrowRight size={14} /></button></div><div className="notice-list">{notices.slice(0, 3).map(n => <div className="notice-row" key={n.id}><div className={`notice-mark notice-${n.kind}`}>{n.kind === 'warning' ? <Activity size={16} /> : n.kind === 'success' ? <CheckCircle2 size={16} /> : <Bell size={16} />}</div><div><b>{n.title}</b><p>{n.message}</p><small>{n.when}</small></div></div>)}</div></div></section>
+    <section className="telegram-integration-card" data-reveal="integration"><div className="telegram-brand-block"><span className="telegram-logo"><Send size={22} /></span><div><span className="panel-kicker">Telegram</span><h3>Новости прямо в мессенджере</h3><p>Решения по заявкам, обновления соревнований и результаты — бот пришлёт всё сам, заходить на сайт не придётся.</p></div></div><div className="telegram-status-block"><span className={`telegram-connection ${telegramStatus.configured && telegramStatus.polling_enabled ? 'telegram-connected' : ''}`}><span />{telegramStatus.configured && telegramStatus.polling_enabled ? 'Бот на связи' : telegramStatus.configured ? 'Нет связи — проверьте логи' : 'Ждёт подключения'}</span><div className="telegram-meta"><span><CheckCircle2 size={14} /> Заявки и решения</span><span><CheckCircle2 size={14} /> Результаты и рейтинг</span></div><button className="button button-light" onClick={() => onNavigate('notifications')}>Подключить бота <ArrowRight size={15} /></button></div></section>
   </div>
 }
 
@@ -442,7 +509,7 @@ function NotificationsView({ items, telegramStatus, telegramLinkStatus, telegram
       <div className="telegram-link-mark"><Send size={20} /></div>
       <div className="telegram-link-copy"><div className="panel-kicker">ВНЕШНИЙ КАНАЛ УВЕДОМЛЕНИЙ</div><h3>Подключение Telegram</h3>
         <p>{telegramLinkStatus.linked ? 'Аккаунт Telegram связан с вашей учётной записью ФСП 56. Персональные уведомления о решениях по заявкам, разрядам, категориям и публикации результатов будут приходить в мессенджер.' : 'Свяжите свой аккаунт Telegram с платформой, чтобы получать персональные сообщения о решениях по заявкам, разрядам и судейским категориям, а также о публикации результатов.'}</p>
-        {!telegramStatus.configured && <div className="prototype-note"><CircleHelp size={16} /><span>Telegram-бот ещё не настроен. Добавьте TELEGRAM_BOT_TOKEN в .env и перезапустите API; публичный URL для локальной проверки не нужен.</span></div>}
+        {!telegramStatus.configured && <div className="prototype-note"><CircleHelp size={16} /><span>Telegram-бот пока не настроен. Добавьте TELEGRAM_BOT_TOKEN в .env и перезапустите API; публичный URL для локальной проверки не нужен.</span></div>}
         {telegramStatus.configured && !telegramStatus.polling_enabled && <div className="prototype-note"><CircleHelp size={16} /><span>Токен задан, но long polling не запущен. Проверьте журналы API и правильность токена.</span></div>}
         {!telegramLinkStatus.linked && telegramLinkCode && <div className="telegram-pairing-code"><span>ОДНОРАЗОВЫЙ КОД · 10 МИНУТ</span><b>{telegramLinkCode}</b><code>/link {telegramLinkCode}</code><small>Откройте бота Telegram, нажмите «Запустить» и отправьте ему команду выше. Код можно использовать один раз.</small></div>}
       </div>
