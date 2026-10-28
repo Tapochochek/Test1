@@ -12,15 +12,6 @@ import (
 
 var stages = []string{"начальная подготовка", "учебно-тренировочный этап", "совершенствование спортивного мастерства", "высшее спортивное мастерство"}
 
-func nextStage(cur string) string {
-	for i, s := range stages {
-		if s == cur && i+1 < len(stages) {
-			return stages[i+1]
-		}
-	}
-	return ""
-}
-
 // canManageAthlete: федерация — любого; тренер — только привязанного (active).
 func (h *Handler) canManageAthlete(r *http.Request, athleteID int64) bool {
 	u := auth.From(r)
