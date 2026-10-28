@@ -954,6 +954,15 @@ func (h *Handler) Enrollment(w http.ResponseWriter, r *http.Request) {
 		items = append(items, map[string]any{"year": year, "municipality": mun, "organization": org, "discipline": disc, "age_group": age, "athletes_count": count})
 		table = append(table, []string{strconv.Itoa(year), mun, org, disc, age, strconv.Itoa(count)})
 	}
+	groupRows := h.groupStageRows(r)
+	groupItems := []map[string]any{}
+	if len(groupRows) > 0 {
+		table = append(table, []string{}, []string{"Учебно-тренировочные группы (на текущую дату)", "Организация", "Этап подготовки", "Дисциплина", "", "Численность"})
+		for _, g := range groupRows {
+			table = append(table, []string{"", g[0], g[1], g[2], "", g[3]})
+			groupItems = append(groupItems, map[string]any{"organization": g[0], "stage": g[1], "discipline": g[2], "athletes_count": g[3]})
+		}
+	}
 	if r.URL.Query().Get("format") == "xlsx" {
 		xlsx, err := exportutil.XLSX("Численность", table)
 		if err != nil {
@@ -963,7 +972,7 @@ func (h *Handler) Enrollment(w http.ResponseWriter, r *http.Request) {
 		writeFile(w, "enrollment.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx)
 		return
 	}
-	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "groups": groupItems})
 }
 
 func (h *Handler) AthleteReport(w http.ResponseWriter, r *http.Request) {
@@ -1082,7 +1091,7 @@ func (h *Handler) IssueCertificate(w http.ResponseWriter, r *http.Request) {
 		httpserver.WriteError(w, http.StatusBadRequest, "Не удалось выпустить справку")
 		return
 	}
-	httpserver.WriteJSON(w, http.StatusCreated, map[string]any{"code": code, "url": "/verify/" + code})
+	httpserver.WriteJSON(w, http.StatusCreated, map[string]any{"code": code, "url": "/api/public/verify/" + code})
 }
 
 func (h *Handler) VerifyCertificate(w http.ResponseWriter, r *http.Request) {
@@ -1099,20 +1108,6 @@ func (h *Handler) VerifyCertificate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"valid": true, "athlete": name, "competition": title, "starts_at": starts.Format("2006-01-02"), "place": place, "score": score, "code": code})
-}
-
-func (h *Handler) Development(w http.ResponseWriter, r *http.Request) {
-	var years []map[string]any
-	rows, err := h.db.QueryContext(r.Context(), `SELECT year, SUM(athletes_count) FROM enrollment_stats GROUP BY year ORDER BY year`)
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var year, count int
-			_ = rows.Scan(&year, &count)
-			years = append(years, map[string]any{"year": year, "athletes": count, "source": "enrollment_stats"})
-		}
-	}
-	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"years": years})
 }
 
 func (h *Handler) AddType(w http.ResponseWriter, r *http.Request) {

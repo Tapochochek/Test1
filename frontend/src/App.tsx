@@ -5,10 +5,13 @@ import {
   FileBadge, FileText, Filter, Flag, LayoutDashboard, Menu, Plus, Search,
   ShieldCheck, Users, UserRound, Trophy, X, LogOut, Sun, Moon, Monitor, Send,
 } from 'lucide-react'
+import { BonusesView, NormsView, PathView } from './Extras2'
+import { AppealsView, JudgeDocs, OrganizationsView } from './Extras'
+import { JudgingView, LinksView, RanksView, ResultsView } from './Workflows'
 import fspLogo from './assets/fsp-logo.svg'
 import fspLogoDark from './assets/fsp-logo-dark.svg'
 
-type PageKey = 'overview' | 'competitions' | 'participants' | 'rating' | 'team' | 'documents' | 'notifications'
+type PageKey = 'overview' | 'competitions' | 'participants' | 'rating' | 'team' | 'documents' | 'notifications' | 'appeals' | 'organizations' | 'norms' | 'bonuses' | 'path' | 'links' | 'results' | 'judging' | 'ranks'
 type Competition = {
   id: number; title: string; discipline: string; competition_type: string; age_group: string;
   starts_at: string; location: string; status: string; participants: number
@@ -26,11 +29,11 @@ type TelegramStatus = { configured: boolean; default_chat_configured: boolean; p
 type TelegramLinkStatus = { linked: boolean }
 type DashboardData = { stats: { athletes: number; competitions: number; applications: number; judges: number }; competitions_total: number; competitions: Competition[]; top_athletes: RatingEntry[] }
 
-type Role = 'Федерация' | 'Тренер' | 'Спортсмен' | 'Судья'
-type RoleCode = 'federation' | 'coach' | 'athlete' | 'judge'
+type Role = 'Федерация' | 'Тренер' | 'Спортсмен' | 'Судья' | 'Министерство'
+type RoleCode = 'federation' | 'coach' | 'athlete' | 'judge' | 'ministry'
 type AuthUser = { id: number; email: string; full_name: string; roles: RoleCode[]; active_role: RoleCode; organization: string; municipality: string; athlete_id?: number; coach_id?: number; judge_id?: number }
-const roleLabels: Record<RoleCode, Role> = { federation: 'Федерация', coach: 'Тренер', athlete: 'Спортсмен', judge: 'Судья' }
-const roleCodes: Record<Role, RoleCode> = { 'Федерация': 'federation', 'Тренер': 'coach', 'Спортсмен': 'athlete', 'Судья': 'judge' }
+const roleLabels: Record<RoleCode, Role> = { federation: 'Федерация', coach: 'Тренер', athlete: 'Спортсмен', judge: 'Судья', ministry: 'Министерство' }
+const roleCodes: Record<Role, RoleCode> = { 'Федерация': 'federation', 'Тренер': 'coach', 'Спортсмен': 'athlete', 'Судья': 'judge', 'Министерство': 'ministry' }
 
 const fallbackCompetitions: Competition[] = [
   { id: 1, title: 'Кубок Оренбуржья по спортивному программированию', discipline: 'Программирование алгоритмическое', competition_type: 'Региональные соревнования', age_group: 'Юноши и девушки 14–17', starts_at: '2026-11-08T10:00:00+05:00', location: 'Оренбург · ОГУ', status: 'Регистрация', participants: 86 },
@@ -61,13 +64,22 @@ const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; tag
   { key: 'rating', label: 'Рейтинг', icon: Trophy },
   { key: 'team', label: 'Сборная', icon: Flag },
   { key: 'documents', label: 'Документы', icon: FileText },
+  { key: 'appeals', label: 'Апелляции', icon: Flag },
+  { key: 'organizations', label: 'Организации', icon: Users },
+  { key: 'norms', label: 'Нормативы', icon: Activity },
+  { key: 'bonuses', label: 'Премии и показатели', icon: Trophy },
+  { key: 'path', label: 'Путь и справочник', icon: CircleHelp },
+  { key: 'links', label: 'Подопечные', icon: Users },
+  { key: 'results', label: 'Результаты', icon: ClipboardList },
+  { key: 'judging', label: 'Судейство', icon: ShieldCheck },
+  { key: 'ranks', label: 'Разряды', icon: FileBadge },
   { key: 'notifications', label: 'Уведомления', icon: Bell },
 ]
 const roleDescriptions: Record<Role, string> = {
-  Федерация: 'Региональное управление', Тренер: 'Кабинет тренера', Спортсмен: 'Кабинет спортсмена', Судья: 'Судейская коллегия',
+  Федерация: 'Региональное управление', Тренер: 'Кабинет тренера', Спортсмен: 'Кабинет спортсмена', Судья: 'Судейская коллегия', Министерство: 'Только просмотр (Министерство спорта)',
 }
 const titles: Record<PageKey, string> = {
-  overview: 'Обзор системы', competitions: 'Соревнования', participants: 'Реестр участников', rating: 'Рейтинг спортсменов', team: 'Сборная области', documents: 'Документы и отчёты', notifications: 'Центр уведомлений',
+  overview: 'Обзор системы', competitions: 'Соревнования', participants: 'Реестр участников', rating: 'Рейтинг спортсменов', team: 'Сборная области', documents: 'Документы и отчёты', notifications: 'Центр уведомлений', appeals: 'Апелляции и нарушения', organizations: 'Организации и группы', norms: 'Нормативы и аттестация', bonuses: 'Премии и показатели развития', path: 'Личный путь и справочник', links: 'Привязка тренера и спортсмена', results: 'Результаты и протоколы', judging: 'Судейская коллегия и категории', ranks: 'Заявки на разряд',
 }
 
 function formatFullDate(raw: string) {
@@ -265,11 +277,17 @@ export default function App() {
   if (authChecking) return <div className="auth-loading"><img className="fsp-logo fsp-logo-loading" src={effectiveTheme === 'light' ? fspLogoDark : fspLogo} alt="ФСП 56 — Оренбургская область" /><p>Проверяем сессию…</p></div>
   if (!user) return <AuthScreen preference={themePreference} effectiveTheme={effectiveTheme} onToggleTheme={toggleTheme} onAuthenticated={(token, signedInUser) => { localStorage.setItem('fsp_token', token); setUser(signedInUser); setRole(roleLabels[signedInUser.active_role] || 'Спортсмен') }} />
 
-  const visibleNav = navItems.filter(item => role === 'Федерация' || role === 'Тренер' || (role === 'Спортсмен' ? item.key !== 'participants' : ['overview', 'competitions', 'documents', 'notifications'].includes(item.key)))
+  const visibleNav = navItems.filter(item => {
+    if (role === 'Министерство') return ['overview', 'competitions', 'rating', 'team', 'documents', 'organizations', 'bonuses', 'path', 'notifications'].includes(item.key)
+    if (role === 'Федерация') return item.key !== 'path'
+    if (role === 'Тренер') return !['bonuses', 'path', 'judging'].includes(item.key)
+    if (role === 'Спортсмен') return !['participants', 'norms', 'bonuses', 'judging'].includes(item.key)
+    return ['overview', 'competitions', 'results', 'judging', 'documents', 'appeals', 'organizations', 'path', 'notifications'].includes(item.key)
+  })
   const initials = initialsOf(user.full_name)
   const logoSrc = effectiveTheme === 'light' ? fspLogoDark : fspLogo
   const pageTitle = page === 'overview'
-    ? (user.active_role === 'federation' ? 'Управление спортивным программированием' : user.active_role === 'coach' ? 'Кабинет тренера' : user.active_role === 'athlete' ? 'Кабинет спортсмена' : 'Рабочее место судьи')
+    ? (user.active_role === 'federation' ? 'Управление спортивным программированием' : user.active_role === 'coach' ? 'Кабинет тренера' : user.active_role === 'athlete' ? 'Кабинет спортсмена' : user.active_role === 'ministry' ? 'Кабинет министерства спорта' : 'Рабочее место судьи')
     : titles[page]
 
   return <div className="app-shell">
@@ -310,7 +328,16 @@ export default function App() {
         {page === 'participants' && <AthletesView items={visibleAthletes} search={search} setSearch={setSearch} canApprove={user.active_role === 'federation'} onApprove={async id => { try { await api(`/api/athletes/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }); setNotice('Профиль спортсмена подтверждён.'); await loadData() } catch (e) { setNotice(e instanceof Error ? e.message : 'Не удалось подтвердить профиль') } }} />}
         {page === 'rating' && <RatingView items={visibleRating} discipline={discipline} setDiscipline={setDiscipline} ageGroup={ageGroup} setAgeGroup={setAgeGroup} search={search} setSearch={setSearch} />}
         {page === 'team' && <TeamView items={team} rating={rating} canEdit={user.active_role === 'federation'} onSave={async ids => { try { const selected = ids.map(id => { const athlete = rating.find(a => a.athlete_id === id); return { athlete_id: id, discipline: athlete?.discipline || '', age_group: athlete?.age_group || '' } }); await api('/api/team', { method: 'POST', body: JSON.stringify({ items: selected }) }); setNotice('Состав сборной сохранён.'); await loadData() } catch (error) { setNotice(error instanceof Error ? error.message : 'Не удалось сохранить состав сборной') } }} />}
-        {page === 'documents' && <DocumentsView onMessage={setNotice} competitions={competitions} athletes={athletes} user={user} role={user.active_role} />}
+        {page === 'documents' && <><DocumentsView onMessage={setNotice} competitions={competitions} athletes={athletes} user={user} role={user.active_role} />{(user.active_role === 'federation' || user.active_role === 'judge' || user.active_role === 'ministry') && <JudgeDocs role={user.active_role} judgeId={user.judge_id} competitions={competitions} onMessage={setNotice} />}</>}
+        {page === 'norms' && <NormsView role={user.active_role} athletes={athletes} onMessage={setNotice} />}
+        {page === 'bonuses' && <BonusesView role={user.active_role} onMessage={setNotice} />}
+        {page === 'path' && <PathView role={user.active_role} onMessage={setNotice} />}
+        {page === 'links' && <LinksView role={user.active_role} onMessage={setNotice} />}
+        {page === 'results' && <ResultsView role={user.active_role} competitions={competitions} onMessage={setNotice} />}
+        {page === 'judging' && <JudgingView role={user.active_role} user={user} competitions={competitions} onMessage={setNotice} />}
+        {page === 'ranks' && <RanksView role={user.active_role} user={user} onMessage={setNotice} />}
+        {page === 'appeals' && <AppealsView role={user.active_role} onMessage={setNotice} />}
+        {page === 'organizations' && <OrganizationsView role={user.active_role} athletes={athletes} onMessage={setNotice} />}
         {page === 'notifications' && <NotificationsView items={notices} telegramStatus={telegramStatus} telegramLinkStatus={telegramLinkStatus} telegramLinkCode={telegramLinkCode} telegramLinkBusy={telegramLinkBusy} onGenerateCode={() => void generateTelegramLinkCode()} onUnlink={() => void unlinkTelegram()} />}
       </div>
     </main>
@@ -351,7 +378,7 @@ function AuthScreen({ onAuthenticated, preference, effectiveTheme, onToggleTheme
     {mode === 'register' && <><label className="auth-label">ФИО<input required autoComplete="name" value={form.full_name} onChange={e => update('full_name', e.target.value)} placeholder="Иван Иванов" /></label><label className="auth-label">Роль в системе<select value={form.role} onChange={e => update('role', e.target.value as RoleCode)}><option value="athlete">Спортсмен</option><option value="coach">Тренер</option><option value="judge">Судья</option></select></label></>}
     <label className="auth-label">Email<input type="email" required autoComplete="email" value={form.email} onChange={e => update('email', e.target.value)} placeholder="you@example.ru" /></label>{mode === 'register' && <div className="auth-form-row"><label className="auth-label">Код из письма<input required inputMode="numeric" maxLength={6} value={form.email_code} onChange={e => update('email_code', e.target.value)} placeholder="6 цифр" /></label><button type="button" className="button button-light" style={{ alignSelf: "end", marginBottom: 14 }} disabled={busy || !form.email} onClick={sendCode}>{codeSent ? 'Отправить ещё раз' : 'Получить код'}</button></div>}<label className="auth-label">Пароль<input type="password" required minLength={mode === 'register' ? 8 : undefined} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={form.password} onChange={e => update('password', e.target.value)} placeholder={mode === 'login' ? 'Ваш пароль' : 'Минимум 8 символов'} /></label>
     {mode === 'register' && <><div className="auth-form-row"><label className="auth-label">Муниципалитет<input required value={form.municipality} onChange={e => update('municipality', e.target.value)} /></label><label className="auth-label">Организация<input required value={form.organization} onChange={e => update('organization', e.target.value)} placeholder="Школа / вуз / клуб" /></label></div><label className="auth-label">Телефон <span>(необязательно)</span><input type="tel" value={form.phone} onChange={e => update('phone', e.target.value)} placeholder="+7 ..." /></label>{form.role === 'athlete' && <><div className="auth-form-row"><label className="auth-label">Дата рождения<input required type="date" value={form.birth_date} onChange={e => update('birth_date', e.target.value)} /></label><label className="auth-label">Возрастная группа<select value={form.age_group} onChange={e => update('age_group', e.target.value)}><option>Юноши и девушки 14–17</option><option>Юниоры и юниорки 18–20</option><option>Мужчины и женщины 21+</option></select></label></div><label className="auth-label">Дисциплина<select value={form.discipline} onChange={e => update('discipline', e.target.value)}>{['Программирование алгоритмическое', 'Программирование продуктовое', 'Программирование систем информационной безопасности', 'Программирование систем искусственного интеллекта', 'Программирование робототехники', 'Программирование беспилотных авиационных систем'].map(d => <option key={d}>{d}</option>)}</select></label>{athleteAge < 18 && <><label className="auth-label">ФИО законного представителя<input required value={form.guardian_name} onChange={e => update('guardian_name', e.target.value)} placeholder="ФИО родителя / опекуна" /></label><label className="auth-consent"><input type="checkbox" checked={form.guardian_consent} onChange={e => update('guardian_consent', e.target.checked)} required /><span>Законный представитель согласен на обработку данных несовершеннолетнего.</span></label></>}</> }<label className="auth-consent"><input type="checkbox" checked={form.consent_personal} onChange={e => update('consent_personal', e.target.checked)} required /><span>Согласен(на) на обработку персональных данных для работы платформы.</span></label></>}
-    {error && <div className="auth-error" role="alert">{error}</div>}<button className="auth-submit" disabled={busy}>{busy ? 'Подождите…' : mode === 'login' ? 'Войти в платформу' : 'Создать аккаунт'}<ArrowRight size={16} /></button></form>{mode === 'login' && <div className="auth-demo"><b>Попробовать без регистрации</b><div className="demo-buttons"><button type="button" className="demo-fill" onClick={() => { update('email', 'federation@fsp56.ru'); update('password', 'demo') }}>Войти как Федерация</button><button type="button" className="demo-fill" onClick={() => { update('email', 'morozov@fsp56.ru'); update('password', 'demo') }}>Войти как спортсмен</button></div><small>Кнопки подставляют демо-аккаунт, пароль для всех: <b>demo</b></small></div>}<div className="auth-foot"><ShieldCheck size={13} /> Защищённая сессия · разграничение прав по ролям</div></section><div className="auth-side-note"><div className="auth-shapes" aria-hidden="true"><i /><i /><i /></div><span>ФСП / 56</span><h2>Спортивное<br/>программирование<br/>региона — в одной системе.</h2><p>Подавайте заявки, следите за результатами и растите в рейтинге Оренбургской области.</p><div className="auth-tags"><span>Соревнования</span><span>Заявки</span><span>Рейтинг</span><span>Сборная</span></div></div></div>
+    {error && <div className="auth-error" role="alert">{error}</div>}<button className="auth-submit" disabled={busy}>{busy ? 'Подождите…' : mode === 'login' ? 'Войти в платформу' : 'Создать аккаунт'}<ArrowRight size={16} /></button></form>{mode === 'login' && <div className="auth-demo"><b>Попробовать без регистрации</b><div className="demo-buttons"><button type="button" className="demo-fill" onClick={() => { update('email', 'federation@fsp56.ru'); update('password', 'demo') }}>Войти как Федерация</button><button type="button" className="demo-fill" onClick={() => { update('email', 'morozov@fsp56.ru'); update('password', 'demo') }}>Войти как спортсмен</button><button type="button" className="demo-fill" onClick={() => { update('email', 'ministry@fsp56.ru'); update('password', 'demo') }}>Войти как Министерство</button></div><small><a href="/api/public/navigator">Навигатор для новичка</a> — публичный раздел без входа</small><small>Кнопки подставляют демо-аккаунт, пароль для всех: <b>demo</b></small></div>}<div className="auth-foot"><ShieldCheck size={13} /> Защищённая сессия · разграничение прав по ролям</div></section><div className="auth-side-note"><div className="auth-shapes" aria-hidden="true"><i /><i /><i /></div><span>ФСП / 56</span><h2>Спортивное<br/>программирование<br/>региона — в одной системе.</h2><p>Подавайте заявки, следите за результатами и растите в рейтинге Оренбургской области.</p><div className="auth-tags"><span>Соревнования</span><span>Заявки</span><span>Рейтинг</span><span>Сборная</span></div></div></div>
 }
 
 function Dashboard({ dashboard, competitions, rating, notices, telegramStatus, onNavigate, role }: { dashboard: DashboardData; competitions: Competition[]; rating: RatingEntry[]; notices: Notice[]; telegramStatus: TelegramStatus; onNavigate: (page: PageKey) => void; role: RoleCode }) {
@@ -482,7 +509,7 @@ function TeamView({ items, rating, canEdit, onSave }: { items: RatingEntry[]; ra
 function DocumentsView({ onMessage, competitions, athletes, user, role }: { onMessage: (message: string) => void; competitions: Competition[]; athletes: Athlete[]; user: AuthUser; role: RoleCode }) {
   const [competitionId, setCompetitionId] = useState<number | ''>('')
   const [athleteId, setAthleteId] = useState<number | ''>('')
-  const canExportRegistry = role === 'federation'
+  const canExportRegistry = role === 'federation' || role === 'ministry'
   const reportAthleteId = role === 'athlete' ? user.athlete_id : (athleteId || undefined)
   const selectableAthletes = role === 'athlete' ? [{ id: user.athlete_id || 0, full_name: user.full_name }] : athletes
   async function download(path: string, filename: string) {

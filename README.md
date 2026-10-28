@@ -67,6 +67,10 @@ docker compose up --build
 - **ФСП ID (Д1):** провайдер OIDC (authorization code + PKCE S256, discovery `/.well-known/openid-configuration`, JWKS, userinfo). Демо-клиент: `/oidc/demo`, регистрация клиентов: `/oidc/admin`.
 - **Вебхуки и внешний API (Д2):** консоль `/api/integrations/console`, документация — `docs/INTEGRATIONS.md`, спецификация — `/api/v1/openapi.yaml`.
 
+## Дополнительные сценарии Д3, Д5, Д9, Д11, Д12
+
+См. `docs/EXTRAS.md` (где и как проверить). Аккаунт министерства: `ministry@fsp56.ru` / `demo`.
+
 ## Структура
 
 ```text

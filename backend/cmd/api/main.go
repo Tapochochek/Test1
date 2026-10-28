@@ -73,6 +73,7 @@ func main() {
 	handler := httpserver.NewRouter(httpserver.Routes{
 		OIDC:              oidcProvider,
 		ExtAPI:            hooks,
+		Extra:             platformHandler.MountExtras,
 		Health:            dashboardHandler.Health,
 		Dashboard:         dashboardHandler.Get,
 		Competitions:      competitionsHandler.List,
@@ -104,6 +105,7 @@ func main() {
 			Links:              platformHandler.Links,
 			Judges:             platformHandler.Judges,
 			AssignJudge:        platformHandler.AssignJudge,
+			Participants:       platformHandler.Participants,
 			Assignments:        platformHandler.Assignments,
 			SaveResults:        platformHandler.SaveResults,
 			Protocol:           platformHandler.Protocol,

@@ -10,6 +10,7 @@ const (
 	RoleAthlete    = "athlete"
 	RoleCoach      = "coach"
 	RoleJudge      = "judge"
+	RoleMinistry   = "ministry"
 )
 
 var Disciplines = []string{
@@ -112,7 +113,17 @@ func RoleLabel(role string) string {
 		return "Спортсмен"
 	case RoleJudge:
 		return "Судья"
+	case RoleMinistry:
+		return "Министерство спорта"
 	default:
 		return role
 	}
+}
+
+// Этапы спортивной подготовки по ФССП.
+var TrainingStages = []string{
+	"Начальная подготовка",
+	"Учебно-тренировочный этап",
+	"Совершенствование спортивного мастерства",
+	"Высшее спортивное мастерство",
 }
