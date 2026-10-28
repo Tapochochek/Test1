@@ -18,8 +18,10 @@ import (
 	"orenkod/backend/internal/database"
 	"orenkod/backend/internal/httpserver"
 	"orenkod/backend/internal/emailcode"
+	"orenkod/backend/internal/integrations/extapi"
 	"orenkod/backend/internal/integrations/telegram"
 	"orenkod/backend/internal/notifications"
+	"orenkod/backend/internal/oidc"
 	"orenkod/backend/internal/platform"
 	"orenkod/backend/internal/ratings"
 )
@@ -54,7 +56,23 @@ func main() {
 	go telegramHandler.Run(ctx)
 	platformHandler.Codes = emailcode.New(emailcode.Config{Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Password: cfg.SMTPPassword, From: cfg.SMTPFrom})
 
+	hooks := extapi.New(db)
+	hooks.Recalc = platformHandler.RecalcPoints
+	platformHandler.Hooks = hooks
+
+	oidcProvider, err := oidc.New(ctx, db, os.Getenv("OIDC_ISSUER"))
+	if err != nil {
+		log.Fatalf("ФСП ID (OIDC): %v", err)
+	}
+	if cfg.SMTPHost == "" {
+		log.Printf("SMTP не настроен (SMTP_HOST пуст): коды входа печатаются только в лог")
+	} else {
+		log.Printf("SMTP настроен: %s:%s, отправитель %s", cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
+	}
+
 	handler := httpserver.NewRouter(httpserver.Routes{
+		OIDC:              oidcProvider,
+		ExtAPI:            hooks,
 		Health:            dashboardHandler.Health,
 		Dashboard:         dashboardHandler.Get,
 		Competitions:      competitionsHandler.List,

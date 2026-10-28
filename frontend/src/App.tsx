@@ -111,6 +111,7 @@ function SiteFooter({ items, onNavigate, logo }: { items: { key: PageKey; label:
       <div className="footer-brand"><img className="fsp-logo fsp-logo-footer" src={logo} alt="ФСП 56 — Оренбургская область" /><p>Региональная платформа Федерации спортивного программирования Оренбургской области: соревнования, заявки, рейтинг и сборная — в одном месте.</p></div>
       <div className="footer-col"><h4>Разделы</h4>{items.map(item => <button key={item.key} onClick={() => onNavigate(item.key)}>{item.label}</button>)}</div>
       <div className="footer-col"><h4>На связи</h4><a href="https://t.me/FSP56OrenburgBot" target="_blank" rel="noreferrer">Telegram-бот ФСП 56</a><a href="https://fsp-russia.ru/" target="_blank" rel="noreferrer">Сайт ФСП России</a></div>
+      <div className="footer-col"><h4>Интеграции</h4><a href="/oidc/demo">Войти через ФСП ID (демо)</a><a href="/oidc/admin">ФСП ID: клиенты (Федерация)</a><a href="/api/integrations/console">Вебхуки и API-токены (Федерация)</a><a href="/api/v1/openapi.yaml">Внешний API (OpenAPI)</a></div>
     </div>
     <div className="footer-bottom"><span>© 2026 ФСП · Оренбургская область</span><span>Сделано на хакатоне ОренКод</span><button className="to-top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}><ArrowUp size={14} /> Наверх</button></div>
   </footer>
@@ -331,7 +332,7 @@ function AuthScreen({ onAuthenticated, preference, effectiveTheme, onToggleTheme
   const athleteAge = form.birth_date ? Math.floor((Date.now() - new Date(form.birth_date).getTime()) / 31557600000) : 99
   async function sendCode() {
     setBusy(true); setError('')
-    try { const r = await api<{ delivered: boolean }>('/api/auth/send-code', { method: 'POST', body: JSON.stringify({ email: form.email }) }); setCodeSent(true); if (!r.delivered) setError('Почта на сервере не настроена (SMTP): код записан в логи api, письмо не отправлено.') }
+    try { const r = await api<{ delivered: boolean }>('/api/auth/send-code', { method: 'POST', body: JSON.stringify({ email: form.email }) }); setCodeSent(true); if (!r.delivered) setError('Почта не настроена на сервере (пустой SMTP_HOST). Код записан в логи api: docker compose logs api. Задайте SMTP_* в .env рядом с docker-compose.yml и выполните docker compose up -d --force-recreate api.') }
     catch (e) { setError(e instanceof Error ? e.message : 'Не удалось отправить код') }
     finally { setBusy(false) }
   }

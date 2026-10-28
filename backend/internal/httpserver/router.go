@@ -4,6 +4,8 @@ import (
 	"net/http"
 
 	"orenkod/backend/internal/auth"
+	"orenkod/backend/internal/integrations/extapi"
+	"orenkod/backend/internal/oidc"
 	"orenkod/backend/internal/rules"
 )
 
@@ -18,6 +20,8 @@ type Routes struct {
 	Notifications     http.HandlerFunc
 	TelegramStatus    http.HandlerFunc
 	Auth              *auth.Service
+	OIDC              *oidc.Provider
+	ExtAPI            *extapi.Service
 	Platform          PlatformRoutes
 }
 
@@ -100,6 +104,12 @@ func NewRouter(routes Routes) http.Handler {
 		register(mux, "GET /api/development", fed(routes.Platform.Development))
 		register(mux, "GET /api/audit", fed(routes.Platform.Audit))
 		register(mux, "POST /api/certificates", athlete(routes.Platform.Certificate))
+		if routes.OIDC != nil {
+			routes.OIDC.Mount(mux, anyUser, fed)
+		}
+		if routes.ExtAPI != nil {
+			routes.ExtAPI.Mount(mux, fed)
+		}
 	} else {
 		register(mux, "GET /api/dashboard", routes.Dashboard)
 		register(mux, "GET /api/competitions", routes.Competitions)

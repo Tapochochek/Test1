@@ -35,6 +35,10 @@ type Service struct {
 }
 
 func New(cfg Config) *Service {
+	cfg.Host = strings.TrimSpace(cfg.Host)
+	cfg.User = strings.TrimSpace(cfg.User)
+	// Пароли приложений Gmail часто копируют с пробелами: «abcd efgh ijkl mnop».
+	cfg.Password = strings.ReplaceAll(strings.TrimSpace(cfg.Password), " ", "")
 	return &Service{cfg: cfg, codes: map[string]entry{}}
 }
 
@@ -107,10 +111,10 @@ func (s *Service) send(to, code string) error {
 	if s.cfg.User != "" {
 		auth = smtp.PlainAuth("", s.cfg.User, s.cfg.Password, s.cfg.Host)
 	}
-	if port != "465" { // STARTTLS (587/25) делает smtp.SendMail сам
-		return smtp.SendMail(addr, auth, from, []string{to}, []byte(msg))
+	if port != "465" { // STARTTLS (587/25) с таймаутом, чтобы запрос не зависал
+		return s.sendSTARTTLS(addr, auth, from, to, msg)
 	}
-	conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: s.cfg.Host})
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", addr, &tls.Config{ServerName: s.cfg.Host})
 	if err != nil {
 		return err
 	}
@@ -142,4 +146,45 @@ func (s *Service) send(to, code string) error {
 
 func b64(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
+}
+
+func (s *Service) sendSTARTTLS(addr string, auth smtp.Auth, from, to, msg string) error {
+	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	if err != nil {
+		return err
+	}
+	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
+	c, err := smtp.NewClient(conn, s.cfg.Host)
+	if err != nil {
+		conn.Close()
+		return err
+	}
+	defer c.Close()
+	if ok, _ := c.Extension("STARTTLS"); ok {
+		if err = c.StartTLS(&tls.Config{ServerName: s.cfg.Host}); err != nil {
+			return err
+		}
+	}
+	if auth != nil {
+		if err = c.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err = c.Mail(from); err != nil {
+		return err
+	}
+	if err = c.Rcpt(to); err != nil {
+		return err
+	}
+	w, err := c.Data()
+	if err != nil {
+		return err
+	}
+	if _, err = w.Write([]byte(msg)); err != nil {
+		return err
+	}
+	if err = w.Close(); err != nil {
+		return err
+	}
+	return c.Quit()
 }

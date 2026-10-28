@@ -62,6 +62,11 @@ docker compose up --build
 - Docker Compose, Nginx reverse proxy, health endpoint и базовые проверки входных данных.
 - Telegram-бот (long polling): команды `/start`, `/events`, `/rating`, `/help`, `/link КОД`; одноразовая привязка аккаунта и персональные уведомления о решениях по заявкам/разрядам/судейским категориям и публикации результатов. Реальная доставка требует токена Telegram; long polling работает локально без публичного HTTPS webhook.
 
+## Интеграции (Д1 и Д2)
+
+- **ФСП ID (Д1):** провайдер OIDC (authorization code + PKCE S256, discovery `/.well-known/openid-configuration`, JWKS, userinfo). Демо-клиент: `/oidc/demo`, регистрация клиентов: `/oidc/admin`.
+- **Вебхуки и внешний API (Д2):** консоль `/api/integrations/console`, документация — `docs/INTEGRATIONS.md`, спецификация — `/api/v1/openapi.yaml`.
+
 ## Структура
 
 ```text
@@ -156,3 +161,20 @@ docker-compose.yml                web + api + postgres
 ## Проверка по критериям
 
 Сценарии и чек-лист приёмки находятся в `docs/ACCEPTANCE_CHECKLIST.md`, предварительная сверка с критериями — в `docs/CRITERIA_MATRIX.md`, руководство Telegram — в `docs/TELEGRAM_BOT_GUIDE.md`. Все статусы в матрице основаны на проверке исходников; подтверждать их нужно сквозным прогоном на стенде.
+
+## ФСП ID (Д1) — OpenID Connect провайдер
+
+Платформа выступает провайдером OIDC: authorization code + **PKCE (S256)**, подписанный `id_token` (RS256).
+
+| Что | Адрес |
+|---|---|
+| Discovery | `/.well-known/openid-configuration` |
+| Authorize (страница входа и согласия) | `/oidc/authorize` |
+| Token | `POST /oidc/token` |
+| Userinfo | `GET /oidc/userinfo` (Bearer) |
+| JWKS | `/oidc/jwks.json` |
+| Регистрация клиентов (роль «Федерация») | `/oidc/admin`, API `GET/POST/DELETE /api/oidc/clients` |
+| Тестовое приложение | `/oidc/demo` (клиент `fsp-demo-client`) |
+
+Scope: `openid profile email roles sport` (`sport` = fsp_id, дисциплины, разряд). Проверка: откройте http://localhost:8080/oidc/demo → «Войти через ФСП ID» → войдите → «Разрешить» → на странице появятся `id_token` и `userinfo`.
+Для приложений-партнёров: публичный клиент (только PKCE) или конфиденциальный (`client_secret`, выдаётся один раз). Redirect URI — только https или localhost, точное совпадение.

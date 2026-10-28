@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"orenkod/backend/internal/emailcode"
 	"orenkod/backend/internal/exportutil"
 	"orenkod/backend/internal/httpserver"
+	"orenkod/backend/internal/integrations/extapi"
 	"orenkod/backend/internal/integrations/telegram"
 	"orenkod/backend/internal/rules"
 )
@@ -27,6 +29,7 @@ type Handler struct {
 	ath    *athletes.Repository
 	notify *telegram.Client
 	Codes  *emailcode.Service // коды подтверждения email; nil — проверка отключена
+	Hooks  *extapi.Service    // вебхуки о событиях; nil — отключены
 }
 
 func New(db *sql.DB, authService *auth.Service, comp *competitions.Service, ath *athletes.Repository, notify *telegram.Client) *Handler {
@@ -218,6 +221,7 @@ func (h *Handler) PublishCompetition(w http.ResponseWriter, r *http.Request) {
 	}
 	h.notifyRole(r, "", "info", "Соревнование опубликовано", "Федерация опубликовала событие в календаре.")
 	h.audit(r, "публикация соревнования", "competitions", strconv.FormatInt(id, 10))
+	h.emitCompetition("competition.published", id, map[string]any{"status": status})
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "status": status})
 }
 
@@ -330,6 +334,7 @@ func (h *Handler) DecideApplication(w http.ResponseWriter, r *http.Request) {
 		h.notify.NotifyUser(telegramUserID.Int64, message)
 	}
 	h.audit(r, "модерация заявки", "applications", input.Status)
+	h.emitApplication(r, id, input.Status, input.Reason)
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -559,6 +564,7 @@ func (h *Handler) SaveResults(w http.ResponseWriter, r *http.Request) {
 	h.notifyInbox(r, rules.RoleAthlete, "success", "Протокол опубликован", "Результаты соревнования доступны в истории выступлений.")
 	h.notifyLinkedAthletesOfResults(r, id)
 	h.audit(r, "ввод результатов", "results", strconv.FormatInt(id, 10))
+	h.emitCompetition("protocol.published", id, map[string]any{"source": "federation", "results": len(input.Items)})
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -746,6 +752,7 @@ func (h *Handler) RankDecide(w http.ResponseWriter, r *http.Request) {
 		h.notify.NotifyUser(telegramUserID.Int64, message)
 	}
 	h.audit(r, "решение по разряду", "rank_applications", input.Status)
+	h.Hooks.Emit("rank.decided", map[string]any{"application_id": id, "status": input.Status, "rank": requestedRank, "order": input.Order})
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -825,6 +832,7 @@ func (h *Handler) CategoryDecide(w http.ResponseWriter, r *http.Request) {
 		h.notify.NotifyUser(telegramUserID.Int64, message)
 	}
 	h.audit(r, "решение по судейской категории", "category_applications", input.Status)
+	h.Hooks.Emit("category.decided", map[string]any{"application_id": id, "status": input.Status, "category": requestedCategory})
 	httpserver.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -1357,4 +1365,45 @@ func nullIfZero(id int64) any {
 		return nil
 	}
 	return id
+}
+
+// RecalcPoints пересчитывает рейтинговые баллы вне HTTP-запроса (например, после импорта результатов).
+func (h *Handler) RecalcPoints(ctx context.Context) {
+	h.recalculatePoints((&http.Request{}).WithContext(ctx))
+}
+
+// emitCompetition отправляет событие с данными соревнования.
+func (h *Handler) emitCompetition(event string, id int64, extra map[string]any) {
+	if h.Hooks == nil {
+		return
+	}
+	var title, discipline, kind, age, status string
+	var starts time.Time
+	if err := h.db.QueryRow(`SELECT title,discipline,competition_type,age_group,status,starts_at FROM competitions WHERE id=$1`, id).Scan(&title, &discipline, &kind, &age, &status, &starts); err != nil {
+		return
+	}
+	data := map[string]any{"competition_id": id, "title": title, "discipline": discipline, "competition_type": kind,
+		"age_group": age, "competition_status": status, "starts_at": starts.Format(time.RFC3339)}
+	for k, v := range extra {
+		data[k] = v
+	}
+	h.Hooks.Emit(event, data)
+}
+
+// emitApplication отправляет application.approved / application.rejected.
+func (h *Handler) emitApplication(r *http.Request, id int64, status, reason string) {
+	if h.Hooks == nil {
+		return
+	}
+	var compID, athleteID int64
+	var athlete, fsp, title string
+	if err := h.db.QueryRowContext(r.Context(), `SELECT ap.competition_id,ap.athlete_id,a.full_name,a.fsp_id,c.title FROM applications ap
+		JOIN athletes a ON a.id=ap.athlete_id JOIN competitions c ON c.id=ap.competition_id WHERE ap.id=$1`, id).Scan(&compID, &athleteID, &athlete, &fsp, &title); err != nil {
+		return
+	}
+	data := map[string]any{"application_id": id, "competition_id": compID, "competition": title, "athlete_id": athleteID, "athlete": athlete, "fsp_id": fsp}
+	if status == "rejected" {
+		data["reason"] = reason
+	}
+	h.Hooks.Emit("application."+status, data)
 }
