@@ -52,10 +52,17 @@ async function load(){
     $('wl').innerHTML=w.items.length?'<table><tr><th>Название</th><th>URL</th><th>События</th><th>Доставки</th><th></th></tr>'+w.items.map(x=>'<tr><td>'+esc(x.name)+(x.active?'':' <i>(выключен)</i>')+'</td><td><code>'+esc(x.url)+'</code></td><td>'+esc(x.events.join(', '))+'</td><td>'+x.delivered+' / '+x.deliveries+'</td><td class="row"><button class="ghost" onclick="test('+x.id+')">Проверить</button><button class="ghost" onclick="tog('+x.id+')">'+(x.active?'Выключить':'Включить')+'</button><button class="danger" onclick="delw('+x.id+')">Удалить</button></td></tr>').join('')+'</table>':'<p>Подписок пока нет.</p>';
     $('tl').innerHTML=t.items.length?'<table><tr><th>Система</th><th>Токен</th><th>Права</th><th>Использован</th><th></th></tr>'+t.items.map(x=>'<tr><td>'+esc(x.name)+'</td><td><code>'+esc(x.prefix)+'…</code></td><td>'+esc(x.scopes.join(' '))+'</td><td>'+esc(x.last_used_at||'—')+'</td><td>'+(x.revoked?'<i>отозван</i>':'<button class="danger" onclick="rev('+x.id+')">Отозвать</button>')+'</td></tr>').join('')+'</table>':'<p>Токенов пока нет.</p>';
     $('dl').innerHTML=d.items.length?'<table><tr><th>Время</th><th>Подписка</th><th>Событие</th><th>Результат</th><th></th></tr>'+d.items.map(x=>'<tr><td>'+esc(x.created_at)+'</td><td>'+esc(x.endpoint)+'</td><td><code>'+esc(x.event)+'</code></td><td class="'+(x.success?'ok':'bad')+'">'+(x.success?'доставлено, HTTP '+x.status_code:'ошибка: '+esc(x.error||'ожидание')+' (попыток: '+x.attempts+')')+'</td><td>'+(x.success?'':'<button class="ghost" onclick="redo('+x.id+')">Повторить</button>')+'</td></tr>').join('')+'</table>':'<p>Событий пока не было.</p>';
-  }catch(e){$('auth').textContent=e.message+' — войдите на платформе под ролью «Федерация».'}
+  }catch(e){needFed(e)}
 }
 $('wadd').onclick=async()=>{$('werr').textContent='';try{const r=await j('/api/integrations/webhooks',{method:'POST',body:JSON.stringify({name:$('wn').value,url:$('wu').value,events:picked('ev')})});showSecret('Подписка создана','Секрет подписи',r.secret,'Сохраните секрет: он нужен получателю для проверки подписи и больше не показывается.');$('wn').value='';$('wu').value='';load()}catch(e){$('werr').textContent=e.message}};
 $('tadd').onclick=async()=>{$('terr').textContent='';try{const r=await j('/api/integrations/tokens',{method:'POST',body:JSON.stringify({name:$('tn').value,scopes:picked('sc')})});showSecret('Токен выдан','API-токен',r.token,'Сохраните токен: в базе хранится только его хеш, повторно показать его нельзя.');$('tn').value='';load()}catch(e){$('terr').textContent=e.message}};
+async function needFed(e){
+ const box=$('auth');box.textContent=e.message+'. ';
+ try{const me=await j('/api/auth/me');
+  if((me.roles||[]).includes('federation')){const bt=document.createElement('button');bt.textContent='Переключить на роль «Федерация»';
+   bt.onclick=async()=>{try{await j('/api/auth/switch-role',{method:'POST',body:JSON.stringify({role:'federation'})});location.reload()}catch(x){box.textContent=x.message}};box.appendChild(bt)}
+  else box.appendChild(document.createTextNode('У этого аккаунта нет роли «Федерация» — войдите на платформе федерацией.'))}
+ catch(_){box.appendChild(document.createTextNode('Войдите на платформе под ролью «Федерация» и обновите страницу.'))}}
 async function act(u,m){try{return await j(u,{method:m||'POST'})}catch(e){alert(e.message)}finally{load()}}
 async function test(id){const r=await act('/api/integrations/webhooks/'+id+'/test');if(r)alert(r.success?'Доставлено, HTTP '+r.status_code:'Ошибка: '+(r.error||r.status_code))}
 async function redo(id){const r=await act('/api/integrations/deliveries/'+id+'/redeliver');if(r)alert(r.success?'Доставлено':'Ошибка: '+(r.error||r.status_code))}

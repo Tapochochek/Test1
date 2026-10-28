@@ -16,8 +16,8 @@ import (
 	"orenkod/backend/internal/config"
 	"orenkod/backend/internal/dashboard"
 	"orenkod/backend/internal/database"
-	"orenkod/backend/internal/httpserver"
 	"orenkod/backend/internal/emailcode"
+	"orenkod/backend/internal/httpserver"
 	"orenkod/backend/internal/integrations/extapi"
 	"orenkod/backend/internal/integrations/telegram"
 	"orenkod/backend/internal/notifications"
@@ -54,7 +54,8 @@ func main() {
 	notificationsHandler := notifications.NewHandler()
 	telegramHandler := telegram.NewBotHandler(telegramClient, competitionsService, ratingsRepo, db)
 	go telegramHandler.Run(ctx)
-	platformHandler.Codes = emailcode.New(emailcode.Config{Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Password: cfg.SMTPPassword, From: cfg.SMTPFrom})
+	go platformHandler.RunReadinessReminders(ctx)
+	platformHandler.Codes = emailcode.New(emailcode.Config{Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Password: cfg.SMTPPassword, From: cfg.SMTPFrom, BrevoKey: cfg.BrevoAPIKey})
 
 	hooks := extapi.New(db)
 	hooks.Recalc = platformHandler.RecalcPoints
@@ -64,8 +65,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("ФСП ID (OIDC): %v", err)
 	}
-	if cfg.SMTPHost == "" {
-		log.Printf("SMTP не настроен (SMTP_HOST пуст): коды входа печатаются только в лог")
+	if cfg.BrevoAPIKey != "" {
+		log.Printf("Почта: HTTP API Brevo настроен, отправитель %s", cfg.SMTPFrom)
+	}
+	if cfg.SMTPHost == "" && cfg.BrevoAPIKey == "" {
+		log.Printf("Почта не настроена (нет SMTP_HOST и BREVO_API_KEY): коды входа печатаются только в лог")
 	} else {
 		log.Printf("SMTP настроен: %s:%s, отправитель %s", cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPFrom)
 	}

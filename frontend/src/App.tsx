@@ -7,11 +7,12 @@ import {
 } from 'lucide-react'
 import { BonusesView, NormsView, PathView } from './Extras2'
 import { AppealsView, JudgeDocs, OrganizationsView } from './Extras'
+import { ReadinessView } from './Readiness'
 import { JudgingView, LinksView, RanksView, ResultsView } from './Workflows'
 import fspLogo from './assets/fsp-logo.svg'
 import fspLogoDark from './assets/fsp-logo-dark.svg'
 
-type PageKey = 'overview' | 'competitions' | 'participants' | 'rating' | 'team' | 'documents' | 'notifications' | 'appeals' | 'organizations' | 'norms' | 'bonuses' | 'path' | 'links' | 'results' | 'judging' | 'ranks'
+type PageKey = 'overview' | 'competitions' | 'participants' | 'rating' | 'team' | 'documents' | 'notifications' | 'appeals' | 'organizations' | 'norms' | 'bonuses' | 'path' | 'links' | 'results' | 'judging' | 'ranks' | 'readiness'
 type Competition = {
   id: number; title: string; discipline: string; competition_type: string; age_group: string;
   starts_at: string; location: string; status: string; participants: number
@@ -73,13 +74,14 @@ const navItems: { key: PageKey; label: string; icon: typeof LayoutDashboard; tag
   { key: 'results', label: 'Результаты', icon: ClipboardList },
   { key: 'judging', label: 'Судейство', icon: ShieldCheck },
   { key: 'ranks', label: 'Разряды', icon: FileBadge },
+  { key: 'readiness', label: 'Готовность к старту', icon: CheckCircle2 },
   { key: 'notifications', label: 'Уведомления', icon: Bell },
 ]
 const roleDescriptions: Record<Role, string> = {
   Федерация: 'Региональное управление', Тренер: 'Кабинет тренера', Спортсмен: 'Кабинет спортсмена', Судья: 'Судейская коллегия', Министерство: 'Только просмотр (Министерство спорта)',
 }
 const titles: Record<PageKey, string> = {
-  overview: 'Обзор системы', competitions: 'Соревнования', participants: 'Реестр участников', rating: 'Рейтинг спортсменов', team: 'Сборная области', documents: 'Документы и отчёты', notifications: 'Центр уведомлений', appeals: 'Апелляции и нарушения', organizations: 'Организации и группы', norms: 'Нормативы и аттестация', bonuses: 'Премии и показатели развития', path: 'Личный путь и справочник', links: 'Привязка тренера и спортсмена', results: 'Результаты и протоколы', judging: 'Судейская коллегия и категории', ranks: 'Заявки на разряд',
+  overview: 'Обзор системы', competitions: 'Соревнования', participants: 'Реестр участников', rating: 'Рейтинг спортсменов', team: 'Сборная области', documents: 'Документы и отчёты', notifications: 'Центр уведомлений', appeals: 'Апелляции и нарушения', organizations: 'Организации и группы', norms: 'Нормативы и аттестация', bonuses: 'Премии и показатели развития', path: 'Личный путь и справочник', readiness: 'Готовность к старту', links: 'Привязка тренера и спортсмена', results: 'Результаты и протоколы', judging: 'Судейская коллегия и категории', ranks: 'Заявки на разряд',
 }
 
 function formatFullDate(raw: string) {
@@ -331,6 +333,7 @@ export default function App() {
         {page === 'documents' && <><DocumentsView onMessage={setNotice} competitions={competitions} athletes={athletes} user={user} role={user.active_role} />{(user.active_role === 'federation' || user.active_role === 'judge' || user.active_role === 'ministry') && <JudgeDocs role={user.active_role} judgeId={user.judge_id} competitions={competitions} onMessage={setNotice} />}</>}
         {page === 'norms' && <NormsView role={user.active_role} athletes={athletes} onMessage={setNotice} />}
         {page === 'bonuses' && <BonusesView role={user.active_role} onMessage={setNotice} />}
+        {page === 'readiness' && <ReadinessView role={user.active_role} competitions={competitions} onMessage={setNotice} />}
         {page === 'path' && <PathView role={user.active_role} onMessage={setNotice} />}
         {page === 'links' && <LinksView role={user.active_role} onMessage={setNotice} />}
         {page === 'results' && <ResultsView role={user.active_role} competitions={competitions} onMessage={setNotice} />}

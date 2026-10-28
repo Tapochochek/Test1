@@ -55,7 +55,12 @@ func (h *Handler) MountExtras(mux *http.ServeMux, a *auth.Service) {
 	mux.HandleFunc("POST /api/groups/{id}/sessions", fedCoach(h.SessionCreate))
 
 	h.mountExtras2(mux, a)
+	h.mountReadiness(mux, a)
 }
+
+func parseID(s string) (int64, error) { return strconv.ParseInt(strings.TrimSpace(s), 10, 64) }
+
+func itoaInt(n int) string { return strconv.Itoa(n) }
 
 func pathID(r *http.Request) int64 {
 	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)

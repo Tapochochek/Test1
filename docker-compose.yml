@@ -26,6 +26,7 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      BREVO_API_KEY: ${BREVO_API_KEY:-}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
     depends_on:
       db:

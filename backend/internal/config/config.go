@@ -17,6 +17,7 @@ type Config struct {
 	TelegramDefaultChatID string
 	TelegramAPIBaseURL    string
 	SMTPHost, SMTPPort, SMTPUser, SMTPPassword, SMTPFrom string
+	BrevoAPIKey                                          string
 }
 
 func Load() Config {
@@ -31,6 +32,7 @@ func Load() Config {
 		SMTPUser:              env("SMTP_USER", ""),
 		SMTPPassword:          env("SMTP_PASSWORD", ""),
 		SMTPFrom:              env("SMTP_FROM", ""),
+		BrevoAPIKey:           env("BREVO_API_KEY", ""),
 	}
 }
 

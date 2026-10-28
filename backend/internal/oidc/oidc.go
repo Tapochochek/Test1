@@ -195,6 +195,13 @@ func (c client) allows(redirect string) bool {
 			return true
 		}
 	}
+	// Встроенное демо-приложение работает на любом адресе платформы (localhost, Render и т.д.):
+	// принимаем redirect_uri вида <origin>/oidc/demo, если это https или localhost.
+	if c.ID == DemoClientID && validRedirect(redirect) {
+		if u, err := url.Parse(redirect); err == nil && u.Path == "/oidc/demo" && u.RawQuery == "" {
+			return true
+		}
+	}
 	return false
 }
 

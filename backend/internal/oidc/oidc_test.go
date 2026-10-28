@@ -44,3 +44,23 @@ func TestValidRedirect(t *testing.T) {
 		}
 	}
 }
+
+func TestDemoClientAllowsAnyPlatformOrigin(t *testing.T) {
+	demo := client{ID: DemoClientID, RedirectURIs: []string{"http://localhost:8080/oidc/demo"}}
+	for uri, want := range map[string]bool{
+		"http://localhost:8080/oidc/demo":                true,
+		"https://frontend-f9ji.onrender.com/oidc/demo":   true,
+		"https://frontend-f9ji.onrender.com/other":       false,
+		"https://frontend-f9ji.onrender.com/oidc/demo?x": false,
+		"http://evil.com/oidc/demo":                      false,
+	} {
+		if demo.allows(uri) != want {
+			t.Errorf("%s: ожидалось %v", uri, want)
+		}
+	}
+	// обычные клиенты по-прежнему требуют точного совпадения
+	other := client{ID: "partner", RedirectURIs: []string{"https://partner.ru/cb"}}
+	if other.allows("https://frontend-f9ji.onrender.com/oidc/demo") || !other.allows("https://partner.ru/cb") {
+		t.Error("для обычного клиента нужно точное совпадение redirect_uri")
+	}
+}

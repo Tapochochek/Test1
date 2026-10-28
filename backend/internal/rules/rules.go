@@ -34,7 +34,8 @@ var EventFormats = []string{"очно", "онлайн", "смешанный"}
 
 func AgeAt(birth, at time.Time) int {
 	age := at.Year() - birth.Year()
-	if at.YearDay() < birth.YearDay() {
+	// сравниваем месяц и день, а не номер дня в году: иначе в високосные годы возраст сбивается на день
+	if at.Month() < birth.Month() || (at.Month() == birth.Month() && at.Day() < birth.Day()) {
 		age--
 	}
 	return age
